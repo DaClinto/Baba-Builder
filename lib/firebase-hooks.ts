@@ -356,7 +356,16 @@ export const useProjectMetadata = (roomId: string) => {
         }, { merge: true });
     };
 
-    return { projectData, updateProjectName };
+    const updateProjectThumbnail = async (thumbnail: string) => {
+        if (!roomId) return;
+        const projectRef = doc(db, 'projects', roomId);
+        await setDoc(projectRef, {
+            thumbnail,
+            lastOpened: Date.now(),
+        }, { merge: true });
+    };
+
+    return { projectData, updateProjectName, updateProjectThumbnail };
 };
 
 // Hook to list all projects

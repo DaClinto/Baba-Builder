@@ -80,7 +80,7 @@ export const createText = (text: string = 'Text', options: any = {}): CanvasObje
 // Serialize canvas to JSON
 export const serializeCanvas = (canvas: fabric.Canvas) => {
     // In Fabric v6+, toObject returns the object representation
-    return canvas.toObject(['objectId']);
+    return canvas.toObject(['objectId', 'locked', 'shadowOptions', 'rx', 'ry', 'isFrame', 'selectable', 'hasControls', 'evented', 'clipPath', 'cropX', 'cropY']);
 };
 
 // Load canvas from JSON
@@ -161,7 +161,77 @@ export const deleteSelectedObjects = (canvas: fabric.Canvas) => {
     }
 };
 
-// Clear canvas
+// Alignment Functions
+export const alignObjects = (canvas: fabric.Canvas, type: 'left' | 'center-h' | 'right' | 'top' | 'center-v' | 'bottom') => {
+    const activeObjects = canvas.getActiveObjects();
+    if (activeObjects.length < 2) return;
+
+    // Get the bounding box of the entire selection
+    const selection = canvas.getActiveObject();
+    if (!selection) return;
+
+    const groupBounds = selection.getBoundingRect();
+
+    activeObjects.forEach((obj) => {
+        const objBounds = obj.getBoundingRect();
+
+        switch (type) {
+            case 'left':
+                obj.set({ left: groupBounds.left + (obj.left! - objBounds.left) });
+                break;
+            case 'center-h':
+                obj.set({ left: groupBounds.left + groupBounds.width / 2 - objBounds.width / 2 + (obj.left! - objBounds.left) });
+                break;
+            case 'right':
+                obj.set({ left: groupBounds.left + groupBounds.width - objBounds.width + (obj.left! - objBounds.left) });
+                break;
+            case 'top':
+                obj.set({ top: groupBounds.top + (obj.top! - objBounds.top) });
+                break;
+            case 'center-v':
+                obj.set({ top: groupBounds.top + groupBounds.height / 2 - objBounds.height / 2 + (obj.top! - objBounds.top) });
+                break;
+            case 'bottom':
+                obj.set({ top: groupBounds.top + groupBounds.height - objBounds.height + (obj.top! - objBounds.top) });
+                break;
+        }
+    });
+
+    canvas.requestRenderAll();
+    canvas.fire('object:modified');
+};
+
+export const distributeObjects = (canvas: fabric.Canvas, type: 'horizontal' | 'vertical') => {
+    const activeObjects = canvas.getActiveObjects();
+    if (activeObjects.length < 3) return;
+
+    // Sort objects by their position
+    if (type === 'horizontal') {
+        activeObjects.sort((a, b) => a.left! - b.left!);
+        const first = activeObjects[0];
+        const last = activeObjects[activeObjects.length - 1];
+        const totalSpan = last.left! - first.left!;
+        const interval = totalSpan / (activeObjects.length - 1);
+
+        activeObjects.forEach((obj, i) => {
+            obj.set({ left: first.left! + i * interval });
+        });
+    } else {
+        activeObjects.sort((a, b) => a.top! - b.top!);
+        const first = activeObjects[0];
+        const last = activeObjects[activeObjects.length - 1];
+        const totalSpan = last.top! - first.top!;
+        const interval = totalSpan / (activeObjects.length - 1);
+
+        activeObjects.forEach((obj, i) => {
+            obj.set({ top: first.top! + i * interval });
+        });
+    }
+
+    canvas.requestRenderAll();
+    canvas.fire('object:modified');
+};
+
 export const clearCanvas = (canvas: fabric.Canvas) => {
     canvas.clear();
     canvas.backgroundColor = '#ffffff';

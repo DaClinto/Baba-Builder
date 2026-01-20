@@ -47,3 +47,6 @@ export const rightSidebarVisibleAtom = atom<boolean>(true);
 
 // Radius tooltip state
 export const radiusTooltipAtom = atom<{ radius: number; x: number; y: number } | null>(null);
+
+// Global loading state for heavy operations
+export const globalLoadingAtom = atom<{ loading: boolean; message: string } | null>(null);

@@ -36,8 +36,19 @@ export type Comment = {
     resolved: boolean;
 };
 
+export interface ShadowOptions {
+    enabled: boolean;
+    color: string;
+    blur: number;
+    offsetX: number;
+    offsetY: number;
+    opacity: number;
+}
+
 export type CanvasObject = fabric.Object & {
     objectId?: string;
+    locked?: boolean;
+    shadowOptions?: ShadowOptions;
 };
 
 export interface CanvasState {
@@ -82,6 +93,7 @@ export type ToolType =
     | 'text'
     | 'draw'
     | 'image'
+    | 'crop'
     | 'hand'
     | 'comment'
     | 'reaction'

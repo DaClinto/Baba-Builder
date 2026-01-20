@@ -11,7 +11,7 @@ import { User } from '@/types';
 
 const Canvas = dynamic(() => import('@/components/Canvas').then(mod => mod.Canvas), {
     ssr: false,
-    loading: () => <div className="flex items-center justify-center h-screen">Loading Editor...</div>,
+    loading: () => <div className="flex items-center justify-center h-screen">Baba Builder...</div>,
 });
 
 export default function DesignPage() {

@@ -12,6 +12,7 @@ import {
     Type,
     Pencil,
     Image,
+    Crop,
     Hand,
     MessageCircle,
     Smile,
@@ -35,6 +36,7 @@ const tools: { type: ToolType; icon: any; label: string; aiNote: string }[] = [
     { type: 'draw', icon: Pencil, label: 'Draw', aiNote: 'Freehand pencil tool. Great for sketching ideas or adding organic shapes.' },
     { type: 'frame', icon: Frame, label: 'Frame', aiNote: 'A container for elements. Keep your design organized and enable local coordinate systems.' },
     { type: 'image', icon: Image, label: 'Image', aiNote: 'Upload an image from your computer to the canvas.' },
+    { type: 'crop', icon: Crop, label: 'Crop', aiNote: 'Crop an image on the canvas. Select an image first, then drag to define the crop area.' },
     { type: 'hand', icon: Hand, label: 'Pan', aiNote: 'Moves the camera view without changing objects. Shortcut: Hold Middle Mouse.' },
     { type: 'comment', icon: MessageCircle, label: 'Comment', aiNote: 'Leave feedback for collaborators at a specific location.' },
 ];

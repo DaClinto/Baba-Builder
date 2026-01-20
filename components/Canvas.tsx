@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import * as fabric from 'fabric';
 import { useAtom } from 'jotai';
 import { AnimatePresence } from 'framer-motion';
@@ -18,6 +19,7 @@ import {
     leftSidebarVisibleAtom,
     rightSidebarVisibleAtom,
     radiusTooltipAtom,
+    globalLoadingAtom,
 } from '@/lib/store';
 import {
     usePresence,
@@ -28,6 +30,8 @@ import {
     usePages,
     useProjectMetadata,
 } from '@/lib/firebase-hooks';
+import { db } from '@/lib/firebase';
+import { doc, deleteDoc } from 'firebase/firestore';
 import {
     createShapeByType,
     serializeCanvas,
@@ -35,6 +39,8 @@ import {
     downloadCanvasAsImage,
     clearCanvas as clearCanvasUtil,
     deleteSelectedObjects,
+    alignObjects,
+    distributeObjects,
 } from '@/lib/canvas-utils';
 import { setupFabricControls } from '@/lib/fabric-controls';
 import { v4 as uuidv4 } from 'uuid';
@@ -75,6 +81,7 @@ export const Canvas = () => {
     const [leftSidebarVisible, setLeftSidebarVisible] = useAtom(leftSidebarVisibleAtom);
     const [rightSidebarVisible, setRightSidebarVisible] = useAtom(rightSidebarVisibleAtom);
     const [radiusTooltip, setRadiusTooltip] = useAtom(radiusTooltipAtom);
+    const [globalLoading, setGlobalLoading] = useAtom(globalLoadingAtom);
 
     const [isPanning, setIsPanning] = useState(false);
     const [hoveredObjectInfo, setHoveredObjectInfo] = useState<{ x: number, y: number, text: string } | null>(null);
@@ -96,7 +103,7 @@ export const Canvas = () => {
     const [activePageId, setActivePageId] = useState<string>('default');
 
     // Project Metadata State
-    const { projectData, updateProjectName } = useProjectMetadata(roomId);
+    const { projectData, updateProjectName, updateProjectThumbnail } = useProjectMetadata(roomId);
 
     // Sync project name from metadata
     useEffect(() => {
@@ -154,6 +161,7 @@ export const Canvas = () => {
     // Cursor Chat State
     const [isCursorChatOpen, setIsCursorChatOpen] = useState(false);
     const [cursorChatValue, setCursorChatValue] = useState('');
+    const router = useRouter();
     const lastMousePos = useRef({ x: 0, y: 0 });
     const cursorMessageTimeout = useRef<NodeJS.Timeout | null>(null);
     const isRemoteUpdate = useRef(false); // Flag to prevent infinite save loops
@@ -161,6 +169,13 @@ export const Canvas = () => {
     // Panel State
     const [selectedObjects, setSelectedObjects] = useState<fabric.Object[]>([]);
     const [canvasObjects, setCanvasObjects] = useState<fabric.Object[]>([]);
+
+    const cropStateRef = useRef<{
+        isCropping: boolean;
+        target: fabric.Object | null;
+        start: fabric.Point | null;
+        overlay: fabric.Rect | null;
+    }>({ isCropping: false, target: null, start: null, overlay: null });
 
     // Initialize canvas
     useEffect(() => {
@@ -199,6 +214,30 @@ export const Canvas = () => {
         // Handle Panning
         const handleMouseDown = (opt: any) => {
             const e = opt.e;
+
+            // Right-click to unlock
+            if (e.button === 2) {
+                const target = canvas.findTarget(e) as unknown as fabric.Object;
+                if (target && (target as any).locked) {
+                    if (confirm('Unlock this element?')) {
+                        (target as any).locked = false;
+                        target.set({
+                            selectable: true,
+                            hasControls: true,
+                            lockMovementX: false,
+                            lockMovementY: false,
+                            lockRotation: false,
+                            lockScalingX: false,
+                            lockScalingY: false
+                        });
+                        canvas.setActiveObject(target);
+                        canvas.requestRenderAll();
+                        saveCanvas();
+                    }
+                    return;
+                }
+            }
+
             // Middle button (1) OR Space + Left Click (0)
             if (e.button === 1 || (isSpaceDown.current && e.button === 0)) {
                 isPanningRef.current = true;
@@ -372,8 +411,16 @@ export const Canvas = () => {
             setCanvasHistory((prev) => [...prev.slice(0, historyIndex + 1), newState]);
             setHistoryIndex((prev) => prev + 1);
             setIsSaving(false);
+
+            // Export thumbnail
+            const thumbnail = fabricCanvasRef.current.toDataURL({
+                format: 'jpeg',
+                multiplier: 0.1, // Small thumbnail
+                quality: 0.1,
+            });
+            updateProjectThumbnail(thumbnail);
         }, 500),
-        [saveCanvasState, historyIndex, setIsSaving, currentUser?.id]
+        [saveCanvasState, historyIndex, setIsSaving, currentUser?.id, updateProjectThumbnail]
     );
 
     // Handle mouse move for cursor tracking
@@ -549,13 +596,94 @@ export const Canvas = () => {
         };
     }, [isGridEnabled, gridSize, isCanvasReady, setRadiusTooltip]);
 
+    // Unified Image Upload Handler
+    const handleImageUpload = useCallback((file?: File) => {
+        const processFile = async (selectedFile: File) => {
+            setGlobalLoading({ loading: true, message: 'Processing your image... Hang tight!' });
+
+            const reader = new FileReader();
+            reader.onload = async (f) => {
+                const data = f.target?.result as string;
+                if (!fabricCanvasRef.current) return;
+
+                try {
+                    // Compress image to avoid Firestore 1MB limit
+                    const resizedData = await resizeImage(data, 1200);
+                    const img = await fabric.FabricImage.fromURL(resizedData);
+
+                    const canvas = fabricCanvasRef.current;
+                    const vpt = canvas.viewportTransform || [1, 0, 0, 1, 0, 0];
+
+                    // Default to center of viewport
+                    const centerX = (canvas.width / 2 - vpt[4]) / vpt[0];
+                    const centerY = (canvas.height / 2 - vpt[5]) / vpt[3];
+
+                    img.set({
+                        left: centerX,
+                        top: centerY,
+                        originX: 'center',
+                        originY: 'center'
+                    });
+
+                    // Scale to reasonable size
+                    if (img.width! > 400) {
+                        img.scaleToWidth(400);
+                    }
+
+                    (img as any).objectId = uuidv4();
+                    canvas.add(img);
+                    canvas.setActiveObject(img);
+                    canvas.requestRenderAll();
+                    saveCanvas();
+                    setGlobalLoading(null);
+                } catch (err) {
+                    console.error('Error loading image:', err);
+                    alert('Failed to load image. It may be too large or corrupted.');
+                    setGlobalLoading(null);
+                }
+            };
+            reader.readAsDataURL(selectedFile);
+        };
+
+        if (file) {
+            processFile(file);
+        } else {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = (e) => {
+                const selectedFile = (e.target as HTMLInputElement).files?.[0];
+                if (selectedFile) processFile(selectedFile);
+            };
+            input.click();
+        }
+    }, [saveCanvas, setGlobalLoading]);
+
+    // Handle Paste Events
+    useEffect(() => {
+        const handlePaste = (e: ClipboardEvent) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    const file = items[i].getAsFile();
+                    if (file) handleImageUpload(file);
+                }
+            }
+        };
+
+        window.addEventListener('paste', handlePaste);
+        return () => window.removeEventListener('paste', handlePaste);
+    }, [handleImageUpload]);
+
     // Handle canvas click for adding shapes
     useEffect(() => {
         const canvas = fabricCanvasRef.current;
         if (!canvas || !isCanvasReady) return;
 
         const handleCanvasClick = (e: any) => {
-            if (selectedTool === 'select' || selectedTool === 'hand' || selectedTool === 'draw' || selectedTool === 'reaction') return;
+            if (selectedTool === 'select' || selectedTool === 'hand' || selectedTool === 'draw' || selectedTool === 'reaction' || selectedTool === 'image' || selectedTool === 'crop') return;
 
             // In Fabric.js v6, the event contains the scenePoint directly
             const pointer = e.scenePoint || (canvas as any).getScenePoint(e.e);
@@ -596,49 +724,6 @@ export const Canvas = () => {
                 case 'text':
                     shape = createShapeByType(ShapeType.Text, { left: pointer.x, top: pointer.y });
                     break;
-                case 'image':
-                    // Image upload with compression
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.accept = 'image/*';
-                    input.onchange = (e) => {
-                        const file = (e.target as HTMLInputElement).files?.[0];
-                        if (!file) return;
-                        const reader = new FileReader();
-                        reader.onload = async (f) => {
-                            const data = f.target?.result as string;
-                            try {
-                                // Compress image to avoid Firestore 1MB limit
-                                const resizedData = await resizeImage(data, 1200);
-                                const img = await fabric.FabricImage.fromURL(resizedData);
-
-                                img.set({
-                                    left: pointer.x,
-                                    top: pointer.y,
-                                    originX: 'center',
-                                    originY: 'center'
-                                });
-
-                                // Scale to reasonable size
-                                if (img.width! > 400) {
-                                    img.scaleToWidth(400);
-                                }
-
-                                (img as any).objectId = uuidv4();
-                                canvas.add(img);
-                                canvas.setActiveObject(img);
-                                canvas.requestRenderAll();
-                                saveCanvas();
-                            } catch (err) {
-                                console.error('Error loading image:', err);
-                                alert('Failed to load image. It may be too large or corrupted.');
-                            }
-                        };
-                        reader.readAsDataURL(file);
-                    };
-                    input.click();
-                    setSelectedTool('select');
-                    return;
                 case 'frame':
                     shape = createShapeByType(ShapeType.Rectangle, {
                         left: pointer.x,
@@ -672,7 +757,233 @@ export const Canvas = () => {
         return () => {
             canvas.off('mouse:down', handleCanvasClick);
         };
-    }, [selectedTool, isCanvasReady, currentUser, addComment, saveCanvas]);
+    }, [selectedTool, isCanvasReady, currentUser, addComment, saveCanvas, handleImageUpload, setSelectedTool]);
+
+    useEffect(() => {
+        const canvas = fabricCanvasRef.current;
+        if (!canvas || !isCanvasReady) return;
+
+        const cropState = cropStateRef.current;
+
+        if (selectedTool !== 'crop') {
+            if (cropState.overlay) {
+                canvas.remove(cropState.overlay);
+                cropState.overlay = null;
+                canvas.requestRenderAll();
+            }
+            cropState.isCropping = false;
+            cropState.target = null;
+            cropState.start = null;
+            canvas.selection = true;
+            canvas.defaultCursor = isSpaceDown.current ? 'grab' : 'default';
+            canvas.hoverCursor = 'move';
+            return;
+        }
+
+        canvas.isDrawingMode = false;
+        canvas.selection = false;
+        canvas.defaultCursor = 'crosshair';
+        canvas.hoverCursor = 'crosshair';
+
+        const getPointer = (opt: any) => {
+            const anyCanvas = canvas as any;
+            return opt.scenePoint || anyCanvas.getScenePoint?.(opt.e) || opt.absolutePointer || opt.pointer || anyCanvas.getPointer?.(opt.e);
+        };
+
+        const handleCropMouseDown = (opt: any) => {
+            const active = canvas.getActiveObject() as fabric.Object | null;
+            const target =
+                (active && active.type === 'image' ? active : null) ||
+                (opt.target as fabric.Object) ||
+                (canvas.findTarget(opt.e) as unknown as fabric.Object) ||
+                active;
+
+            if (!target || target.type !== 'image') {
+                return;
+            }
+
+            opt.e?.preventDefault?.();
+            opt.e?.stopPropagation?.();
+
+            const pointer = getPointer(opt);
+            if (!pointer) return;
+
+            canvas.setActiveObject(target);
+            cropState.isCropping = true;
+            cropState.target = target;
+            cropState.start = new fabric.Point(pointer.x, pointer.y);
+
+            if (cropState.overlay) {
+                canvas.remove(cropState.overlay);
+            }
+
+            const overlay = new fabric.Rect({
+                left: pointer.x,
+                top: pointer.y,
+                width: 0,
+                height: 0,
+                fill: 'rgba(59, 130, 246, 0.08)',
+                stroke: '#3b82f6',
+                strokeWidth: 1,
+                strokeDashArray: [4, 4],
+                selectable: false,
+                evented: false,
+                objectCaching: false,
+            });
+            (overlay as any).excludeFromExport = true;
+            cropState.overlay = overlay;
+            canvas.add(overlay);
+            (overlay as any).bringToFront?.();
+            (canvas as any).bringObjectToFront?.(overlay);
+            (canvas as any).moveObjectTo?.(overlay, (canvas.getObjects()?.length || 1) - 1);
+            canvas.requestRenderAll();
+        };
+
+        const handleCropMouseMove = (opt: any) => {
+            if (!cropState.isCropping || !cropState.start || !cropState.overlay) return;
+            const pointer = getPointer(opt);
+            if (!pointer) return;
+
+            const x1 = cropState.start.x;
+            const y1 = cropState.start.y;
+            const x2 = pointer.x;
+            const y2 = pointer.y;
+            const left = Math.min(x1, x2);
+            const top = Math.min(y1, y2);
+            const width = Math.abs(x2 - x1);
+            const height = Math.abs(y2 - y1);
+
+            cropState.overlay.set({ left, top, width, height });
+            cropState.overlay.setCoords();
+            canvas.requestRenderAll();
+        };
+
+        const handleCropMouseUp = () => {
+            if (!cropState.isCropping || !cropState.target || !cropState.overlay) return;
+
+            const overlay = cropState.overlay;
+            const target = cropState.target as any;
+
+            const ow = overlay.width || 0;
+            const oh = overlay.height || 0;
+            if (ow < 5 || oh < 5) {
+                canvas.remove(overlay);
+                cropState.overlay = null;
+                cropState.isCropping = false;
+                cropState.target = null;
+                cropState.start = null;
+                canvas.requestRenderAll();
+                return;
+            }
+
+            const tl = new fabric.Point(overlay.left || 0, overlay.top || 0);
+            const br = new fabric.Point((overlay.left || 0) + ow, (overlay.top || 0) + oh);
+
+            const anyTarget = cropState.target as any;
+            const p1 = typeof anyTarget.toLocalPoint === 'function'
+                ? anyTarget.toLocalPoint(tl, 'center', 'center')
+                : (() => {
+                    const m = anyTarget.calcTransformMatrix();
+                    const inv = fabric.util.invertTransform(m);
+                    return fabric.util.transformPoint(tl, inv);
+                })();
+
+            const p2 = typeof anyTarget.toLocalPoint === 'function'
+                ? anyTarget.toLocalPoint(br, 'center', 'center')
+                : (() => {
+                    const m = anyTarget.calcTransformMatrix();
+                    const inv = fabric.util.invertTransform(m);
+                    return fabric.util.transformPoint(br, inv);
+                })();
+
+            const w = target.width || 0;
+            const h = target.height || 0;
+
+            const localMinX = Math.min(p1.x, p2.x);
+            const localMaxX = Math.max(p1.x, p2.x);
+            const localMinY = Math.min(p1.y, p2.y);
+            const localMaxY = Math.max(p1.y, p2.y);
+
+            // Clamp crop to the image bounds in object local coords.
+            const halfW = w / 2;
+            const halfH = h / 2;
+            const x1 = Math.max(-halfW, Math.min(halfW, localMinX));
+            const x2 = Math.max(-halfW, Math.min(halfW, localMaxX));
+            const y1 = Math.max(-halfH, Math.min(halfH, localMinY));
+            const y2 = Math.max(-halfH, Math.min(halfH, localMaxY));
+
+            const clipW = Math.max(1, x2 - x1);
+            const clipH = Math.max(1, y2 - y1);
+            const clipCx = (x1 + x2) / 2;
+            const clipCy = (y1 + y2) / 2;
+
+            const clipRect = new fabric.Rect({
+                width: clipW,
+                height: clipH,
+                left: clipCx,
+                top: clipCy,
+                originX: 'center',
+                originY: 'center',
+                selectable: false,
+                evented: false,
+                objectCaching: false,
+            });
+            (clipRect as any).absolutePositioned = false;
+
+            target.set({
+                clipPath: clipRect,
+            });
+            target.dirty = true;
+            target.setCoords();
+
+            canvas.remove(overlay);
+            cropState.overlay = null;
+            cropState.isCropping = false;
+            cropState.target = null;
+            cropState.start = null;
+
+            canvas.setActiveObject(target);
+            canvas.requestRenderAll();
+            canvas.fire('object:modified');
+            saveCanvas();
+            setSelectedTool('select');
+        };
+
+        canvas.on('mouse:down', handleCropMouseDown);
+        canvas.on('mouse:move', handleCropMouseMove);
+        canvas.on('mouse:up', handleCropMouseUp);
+
+        return () => {
+            canvas.off('mouse:down', handleCropMouseDown);
+            canvas.off('mouse:move', handleCropMouseMove);
+            canvas.off('mouse:up', handleCropMouseUp);
+        };
+    }, [selectedTool, isCanvasReady, saveCanvas, setSelectedTool]);
+
+    useEffect(() => {
+        if (selectedTool !== 'crop') return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+
+            const canvas = fabricCanvasRef.current;
+            if (!canvas) return;
+
+            const cropState = cropStateRef.current;
+            if (cropState.overlay) {
+                canvas.remove(cropState.overlay);
+            }
+            cropState.overlay = null;
+            cropState.isCropping = false;
+            cropState.target = null;
+            cropState.start = null;
+            canvas.requestRenderAll();
+            setSelectedTool('select');
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedTool, setSelectedTool]);
 
     // Handle free drawing
     useEffect(() => {
@@ -735,6 +1046,48 @@ export const Canvas = () => {
                 e.preventDefault();
                 handleRedo();
             }
+
+            // Ctrl/Cmd + L (Lock)
+            if ((e.ctrlKey || e.metaKey) && e.key === 'l' && !e.shiftKey) {
+                e.preventDefault();
+                const activeObjects = canvas.getActiveObjects();
+                activeObjects.forEach(obj => {
+                    (obj as any).locked = true;
+                    obj.set({
+                        selectable: false,
+                        hasControls: false,
+                        lockMovementX: true,
+                        lockMovementY: true,
+                        lockRotation: true,
+                        lockScalingX: true,
+                        lockScalingY: true
+                    });
+                });
+                canvas.discardActiveObject();
+                canvas.requestRenderAll();
+                saveCanvas();
+            }
+
+            // Ctrl/Cmd + Shift + L (Unlock All)
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'l') {
+                e.preventDefault();
+                canvas.getObjects().forEach(obj => {
+                    if ((obj as any).locked) {
+                        (obj as any).locked = false;
+                        obj.set({
+                            selectable: true,
+                            hasControls: true,
+                            lockMovementX: false,
+                            lockMovementY: false,
+                            lockRotation: false,
+                            lockScalingX: false,
+                            lockScalingY: false
+                        });
+                    }
+                });
+                canvas.requestRenderAll();
+                saveCanvas();
+            }
         };
 
         window.addEventListener('keydown', handleKeyDown);
@@ -767,6 +1120,31 @@ export const Canvas = () => {
             saveCanvas();
         }
     }, [saveCanvas]);
+
+    // Delete entire project
+    const handleDeleteProject = useCallback(async () => {
+        if (!roomId || !currentUser) return;
+
+        const confirmed = confirm('Permanently delete this design? This will remove it from Your Legacy Folder forever.');
+        if (confirmed) {
+            try {
+                setGlobalLoading({ loading: true, message: 'Erasing design from cloud...' });
+
+                await deleteDoc(doc(db, 'projects', roomId));
+
+                setGlobalLoading({ loading: true, message: 'Erased successfully! Returning to dashboard...' });
+
+                setTimeout(() => {
+                    router.push('/');
+                    setGlobalLoading(null);
+                }, 1000);
+            } catch (err) {
+                console.error('Delete Error:', err);
+                alert('Could not delete the project. It may have already been removed.');
+                setGlobalLoading(null);
+            }
+        }
+    }, [roomId, currentUser, router, setGlobalLoading]);
 
     // Export canvas
     const handleExport = useCallback(() => {
@@ -835,6 +1213,38 @@ export const Canvas = () => {
         color: user.userColor,
     }));
 
+    const handleLayerSelect = useCallback((objs: fabric.Object[]) => {
+        setSelectedObjects(objs);
+    }, []);
+
+    const handleLayerReorder = useCallback((objs: fabric.Object[]) => {
+        const canvas = fabricCanvasRef.current;
+        if (!canvas) return;
+
+        // Fabric stores objects back-to-front (higher index = visually on top).
+        // Apply the desired object order onto the canvas.
+        objs.forEach((obj, index) => {
+            const anyCanvas = canvas as any;
+            if (typeof anyCanvas.moveObjectTo === 'function') {
+                anyCanvas.moveObjectTo(obj, index);
+                return;
+            }
+
+            if (typeof anyCanvas.insertAt === 'function') {
+                try {
+                    canvas.remove(obj);
+                } catch {
+                    // ignore
+                }
+                anyCanvas.insertAt(obj, index, false);
+            }
+        });
+
+        canvas.requestRenderAll();
+        setCanvasObjects(canvas.getObjects());
+        canvas.fire('object:modified');
+    }, []);
+
     const handlePageSwitch = (newPageId: string) => {
         // Force save current state before switching
         if (saveCanvas && (saveCanvas as any).flush) {
@@ -859,6 +1269,7 @@ export const Canvas = () => {
                 onUndo={handleUndo}
                 onRedo={handleRedo}
                 onClear={handleClear}
+                onDeleteProject={handleDeleteProject}
                 onExport={handleExport}
                 onExportSVG={handleExportSVG}
                 onZoomIn={handleZoomIn}
@@ -874,6 +1285,8 @@ export const Canvas = () => {
                     canvas={fabricCanvasRef.current}
                     objects={canvasObjects}
                     selectedObjects={selectedObjects}
+                    onSelect={handleLayerSelect}
+                    onReorder={handleLayerReorder}
                     pages={pages}
                     activePageId={activePageId}
                     onAddPage={() => addPage(`Page ${pages.length + 1}`)}
@@ -885,7 +1298,13 @@ export const Canvas = () => {
             {/* Toolbar - Pushed right due to sidebar */}
             <Toolbar
                 selectedTool={selectedTool}
-                onToolChange={setSelectedTool}
+                onToolChange={(tool) => {
+                    if (tool === 'image') {
+                        handleImageUpload();
+                    } else {
+                        setSelectedTool(tool);
+                    }
+                }}
                 onReaction={handleReaction}
                 className={`transition-all duration-300 ${leftSidebarVisible ? "left-[256px]" : "left-6"}`}
             />
@@ -899,7 +1318,20 @@ export const Canvas = () => {
             )}
 
             {/* Canvas Container */}
-            <div className={`pt-16 relative flex-1 transition-all duration-300 ${leftSidebarVisible ? 'ml-[240px]' : 'ml-0'} ${rightSidebarVisible ? 'mr-[256px]' : 'mr-0'} overflow-hidden`}>
+            <div
+                className={`pt-16 relative flex-1 transition-all duration-300 ${leftSidebarVisible ? 'ml-[240px]' : 'ml-0'} ${rightSidebarVisible ? 'mr-[256px]' : 'mr-0'} overflow-hidden h-full`}
+                onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'copy';
+                }}
+                onDrop={(e) => {
+                    e.preventDefault();
+                    const file = e.dataTransfer.files[0];
+                    if (file && file.type.startsWith('image/')) {
+                        handleImageUpload(file);
+                    }
+                }}
+            >
                 <canvas ref={canvasRef} className="block" />
 
                 {/* Learning Mode Overlay for Objects */}
@@ -989,7 +1421,34 @@ export const Canvas = () => {
                 <Comment key={comment.id} comment={comment} onResolve={resolveComment} />
             ))}
 
-            {/* Loading Overlay */}
+            {/* Global Loading Overlay / Pop up Alert */}
+            {globalLoading && (
+                <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-md z-[1000] flex items-center justify-center animate-in fade-in duration-300">
+                    <div className="bg-white rounded-3xl p-8 shadow-2xl flex flex-col items-center gap-6 max-w-sm text-center transform scale-100 animate-in zoom-in-95 duration-200">
+                        <div className="relative">
+                            <div className="w-16 h-16 rounded-full border-4 border-blue-100 border-t-blue-600 animate-spin"></div>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="w-8 h-8 bg-blue-50 rounded-full flex items-center justify-center">
+                                    <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <h3 className="text-lg font-black text-gray-900 leading-tight">
+                                {globalLoading.message.split('...')[0]}...
+                            </h3>
+                            <p className="text-sm text-gray-500 font-medium leading-relaxed">
+                                {globalLoading.message.split('...')[1] || "This might take a few seconds while we finish the heavy lifting."}
+                            </p>
+                        </div>
+                        <div className="w-full h-1 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-blue-600 animate-loading-bar"></div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Loading Overlay (Initial) */}
             {isLoading && (
                 <div className="absolute inset-0 bg-white/80 z-50 flex items-center justify-center pointer-events-auto backdrop-blur-sm">
                     <div className="flex flex-col items-center gap-3">

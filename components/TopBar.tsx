@@ -1,6 +1,6 @@
 'use client';
 
-import { Undo, Redo, Download, Trash2, ZoomIn, ZoomOut, Home, Cloud, CloudCheck, ChevronRight, PanelLeft, PanelRight } from 'lucide-react';
+import { Undo, Redo, Download, Trash2, Eraser, ZoomIn, ZoomOut, Home, Cloud, CloudCheck, ChevronRight, PanelLeft, PanelRight } from 'lucide-react';
 import { ActiveUsers } from './ActiveUsers';
 import { User } from '@/types';
 import Link from 'next/link';
@@ -18,6 +18,7 @@ type TopBarProps = {
     onUndo: () => void;
     onRedo: () => void;
     onClear: () => void;
+    onDeleteProject?: () => void;
     onExport: () => void;
     onExportSVG: () => void;
     onZoomIn: () => void;
@@ -40,6 +41,7 @@ export const TopBar = ({
     onUndo,
     onRedo,
     onClear,
+    onDeleteProject,
     onExport,
     onExportSVG,
     onZoomIn,
@@ -144,11 +146,21 @@ export const TopBar = ({
 
                 <button
                     onClick={onClear}
-                    className="p-2 rounded-lg hover:bg-red-50 transition-colors"
-                    title="Clear Canvas"
+                    className="p-2 rounded-lg hover:bg-orange-50 transition-colors group"
+                    title="Clear All Canvas Content (Keeps File)"
                 >
-                    <Trash2 className="w-5 h-5 text-red-600" />
+                    <Eraser className="w-5 h-5 text-orange-600 group-hover:scale-110 transition-transform" />
                 </button>
+
+                {onDeleteProject && (
+                    <button
+                        onClick={onDeleteProject}
+                        className="p-2 rounded-lg hover:bg-red-50 transition-colors group"
+                        title="Delete Entire Project Permanently"
+                    >
+                        <Trash2 className="w-5 h-5 text-red-600 font-black group-hover:scale-110 transition-transform" />
+                    </button>
+                )}
 
                 <button
                     onClick={onExport}
