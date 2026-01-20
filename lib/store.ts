@@ -44,3 +44,6 @@ export const canvasPanAtom = atom<{ x: number; y: number }>({ x: 0, y: 0 });
 // Sidebar visibility
 export const leftSidebarVisibleAtom = atom<boolean>(true);
 export const rightSidebarVisibleAtom = atom<boolean>(true);
+
+// Radius tooltip state
+export const radiusTooltipAtom = atom<{ radius: number; x: number; y: number } | null>(null);

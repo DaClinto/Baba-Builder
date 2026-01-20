@@ -262,9 +262,8 @@ export const RightSidebar = ({ canvas, selectedObjects }: RightSidebarProps) => 
                             onChange={(e) => {
                                 const val = parseInt(e.target.value);
                                 if (activeObject) {
-                                    const scaleX = val / (activeObject.width || 1);
                                     setDimensions(prev => ({ ...prev, width: val }));
-                                    handleUpdate({ scaleX });
+                                    handleUpdate({ width: val, scaleX: 1 });
                                 }
                             }}
                             className="w-full bg-gray-50 border-none rounded p-1.5 text-sm focus:ring-1 focus:ring-blue-500 outline-none"
@@ -278,9 +277,8 @@ export const RightSidebar = ({ canvas, selectedObjects }: RightSidebarProps) => 
                             onChange={(e) => {
                                 const val = parseInt(e.target.value);
                                 if (activeObject) {
-                                    const scaleY = val / (activeObject.height || 1);
                                     setDimensions(prev => ({ ...prev, height: val }));
-                                    handleUpdate({ scaleY });
+                                    handleUpdate({ height: val, scaleY: 1 });
                                 }
                             }}
                             className="w-full bg-gray-50 border-none rounded p-1.5 text-sm focus:ring-1 focus:ring-blue-500 outline-none"
@@ -296,7 +294,11 @@ export const RightSidebar = ({ canvas, selectedObjects }: RightSidebarProps) => 
                             min="0"
                             value={Math.round(dimensions.cornerRadius)}
                             onChange={(e) => {
-                                const val = parseInt(e.target.value);
+                                if (!activeObject) return;
+                                let val = parseInt(e.target.value);
+                                const maxRadius = Math.min(activeObject.width || 0, activeObject.height || 0) / 2;
+                                val = Math.max(0, Math.min(val, maxRadius));
+
                                 setDimensions(prev => ({ ...prev, cornerRadius: val }));
                                 handleUpdate({ rx: val, ry: val });
                             }}

@@ -17,6 +17,7 @@ import {
     isSavingAtom,
     leftSidebarVisibleAtom,
     rightSidebarVisibleAtom,
+    radiusTooltipAtom,
 } from '@/lib/store';
 import {
     usePresence,
@@ -73,6 +74,7 @@ export const Canvas = () => {
     const [isSaving, setIsSaving] = useAtom(isSavingAtom);
     const [leftSidebarVisible, setLeftSidebarVisible] = useAtom(leftSidebarVisibleAtom);
     const [rightSidebarVisible, setRightSidebarVisible] = useAtom(rightSidebarVisibleAtom);
+    const [radiusTooltip, setRadiusTooltip] = useAtom(radiusTooltipAtom);
 
     const [isPanning, setIsPanning] = useState(false);
     const [hoveredObjectInfo, setHoveredObjectInfo] = useState<{ x: number, y: number, text: string } | null>(null);
@@ -245,7 +247,10 @@ export const Canvas = () => {
         canvas.on('mouse:wheel', handleWheel);
         canvas.on('mouse:down', handleMouseDown);
         canvas.on('mouse:move', handleMouseMove);
-        canvas.on('mouse:up', handleMouseUp);
+        canvas.on('mouse:up', () => {
+            handleMouseUp();
+            setRadiusTooltip(null);
+        });
 
         // Object hover tooltips for Learning Mode
         const handleMouseOver = (opt: any) => {
@@ -503,12 +508,46 @@ export const Canvas = () => {
             });
         };
 
-        canvas.on('object:moving', handleMoving);
+        const handleScaling = (options: any) => {
+            const target = options.target;
+            if (target && target.type === 'rect') {
+                const width = target.width * target.scaleX;
+                const height = target.height * target.scaleY;
+
+                // Figma-style: clamp radius on resize
+                const maxRadius = Math.min(width, height) / 2;
+                const currentRadius = target.rx || 0;
+                const newRadius = Math.min(currentRadius, maxRadius);
+
+                target.set({
+                    width: width,
+                    height: height,
+                    scaleX: 1,
+                    scaleY: 1,
+                    rx: newRadius,
+                    ry: newRadius,
+                });
+            }
+        };
+
+        const handleRadiusChanging = (e: any) => {
+            setRadiusTooltip({
+                radius: e.radius,
+                x: lastMousePos.current.x,
+                y: lastMousePos.current.y - 30
+            });
+        };
+
+        (canvas as any).on('object:moving', handleMoving);
+        (canvas as any).on('object:scaling', handleScaling);
+        (canvas as any).on('radius:changing', handleRadiusChanging);
 
         return () => {
-            canvas.off('object:moving', handleMoving);
+            (canvas as any).off('object:moving', handleMoving);
+            (canvas as any).off('object:scaling', handleScaling);
+            (canvas as any).off('radius:changing', handleRadiusChanging);
         };
-    }, [isGridEnabled, gridSize, isCanvasReady]);
+    }, [isGridEnabled, gridSize, isCanvasReady, setRadiusTooltip]);
 
     // Handle canvas click for adding shapes
     useEffect(() => {
@@ -869,11 +908,16 @@ export const Canvas = () => {
                         className="absolute pointer-events-none bg-orange-600 text-white text-[10px] px-2 py-1.5 rounded shadow-lg z-[100] max-w-[200px] animate-in fade-in zoom-in duration-200"
                         style={{ left: hoveredObjectInfo.x, top: hoveredObjectInfo.y }}
                     >
-                        <div className="font-bold border-b border-orange-400 mb-1 pb-1 flex items-center gap-1">
-                            <HelpCircle className="w-3 h-3" />
-                            AI Explainer
-                        </div>
                         {hoveredObjectInfo.text}
+                    </div>
+                )}
+                {/* Radius Tooltip */}
+                {radiusTooltip && (
+                    <div
+                        className="absolute pointer-events-none bg-blue-600 text-white text-[11px] font-bold px-2 py-1 rounded shadow-lg z-[100] -translate-x-1/2 flex items-center gap-1"
+                        style={{ left: radiusTooltip.x, top: radiusTooltip.y }}
+                    >
+                        Radius: {radiusTooltip.radius}px
                     </div>
                 )}
             </div>
