@@ -80,7 +80,7 @@ export const createText = (text: string = 'Text', options: any = {}): CanvasObje
 // Serialize canvas to JSON
 export const serializeCanvas = (canvas: fabric.Canvas) => {
     // In Fabric v6+, toObject returns the object representation
-    return canvas.toObject(['objectId', 'locked', 'shadowOptions', 'rx', 'ry', 'isFrame', 'selectable', 'hasControls', 'evented', 'clipPath', 'cropX', 'cropY', 'width', 'height']);
+    return canvas.toObject(['objectId', 'locked', 'shadowOptions', 'rx', 'ry', 'isFrame', 'selectable', 'hasControls', 'evented', 'clipPath', 'cropX', 'cropY']);
 };
 
 // Load canvas from JSON

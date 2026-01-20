@@ -19,7 +19,7 @@ export default function AuthPage() {
             color: '#3b82f6'
         };
 
-        sessionStorage.setItem('figma-clone-user', JSON.stringify(mockUser));
+        sessionStorage.setItem('kanvaso-user', JSON.stringify(mockUser));
         router.push('/');
     };
 
@@ -41,10 +41,8 @@ export default function AuthPage() {
                     className="relative z-10 max-w-2xl text-center lg:text-left"
                 >
                     <div className="flex items-center gap-3 mb-8 justify-center lg:justify-start">
-                        <div className="w-12 h-12 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-                            <Sparkles className="w-6 h-6 text-white" />
-                        </div>
-                        <h2 className="text-2xl font-black tracking-tighter uppercase">Baba Builder</h2>
+                        <img src="/assets/kanvaso-logo.svg" alt="Kanvaso" className="w-12 h-12 rounded-2xl" />
+                        <h2 className="text-2xl font-black tracking-tighter uppercase">Kanvaso</h2>
                     </div>
 
                     <h1 className="text-6xl xl:text-7xl font-black leading-tight mb-6 bg-gradient-to-r from-white via-white to-gray-500 bg-clip-text text-transparent">

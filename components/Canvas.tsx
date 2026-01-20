@@ -876,53 +876,63 @@ export const Canvas = () => {
                 return;
             }
 
-            // Get overlay bounds in canvas coordinates
-            const overlayLeft = overlay.left || 0;
-            const overlayTop = overlay.top || 0;
-            const overlayRight = overlayLeft + ow;
-            const overlayBottom = overlayTop + oh;
+            const tl = new fabric.Point(overlay.left || 0, overlay.top || 0);
+            const br = new fabric.Point((overlay.left || 0) + ow, (overlay.top || 0) + oh);
 
-            // Get target image bounds in canvas coordinates
-            const targetBounds = target.getBoundingRect(true);
-            const targetLeft = targetBounds.left;
-            const targetTop = targetBounds.top;
-            const targetRight = targetLeft + targetBounds.width;
-            const targetBottom = targetTop + targetBounds.height;
+            const anyTarget = cropState.target as any;
+            const p1 = typeof anyTarget.toLocalPoint === 'function'
+                ? anyTarget.toLocalPoint(tl, 'center', 'center')
+                : (() => {
+                    const m = anyTarget.calcTransformMatrix();
+                    const inv = fabric.util.invertTransform(m);
+                    return fabric.util.transformPoint(tl, inv);
+                })();
 
-            // Calculate intersection between overlay and image
-            const cropLeft = Math.max(targetLeft, overlayLeft);
-            const cropTop = Math.max(targetTop, overlayTop);
-            const cropRight = Math.min(targetRight, overlayRight);
-            const cropBottom = Math.min(targetBottom, overlayBottom);
+            const p2 = typeof anyTarget.toLocalPoint === 'function'
+                ? anyTarget.toLocalPoint(br, 'center', 'center')
+                : (() => {
+                    const m = anyTarget.calcTransformMatrix();
+                    const inv = fabric.util.invertTransform(m);
+                    return fabric.util.transformPoint(br, inv);
+                })();
 
-            // If no valid intersection, cancel crop
-            if (cropRight <= cropLeft || cropBottom <= cropTop) {
-                canvas.remove(overlay);
-                cropState.overlay = null;
-                cropState.isCropping = false;
-                cropState.target = null;
-                cropState.start = null;
-                canvas.requestRenderAll();
-                return;
-            }
+            const w = target.width || 0;
+            const h = target.height || 0;
 
-            // Calculate crop dimensions relative to the image
-            const cropX = cropLeft - targetLeft;
-            const cropY = cropTop - targetTop;
-            const cropWidth = cropRight - cropLeft;
-            const cropHeight = cropBottom - cropTop;
+            const localMinX = Math.min(p1.x, p2.x);
+            const localMaxX = Math.max(p1.x, p2.x);
+            const localMinY = Math.min(p1.y, p2.y);
+            const localMaxY = Math.max(p1.y, p2.y);
 
-            // Apply crop using Fabric's built-in crop properties
-            target.set({
-                cropX: cropX,
-                cropY: cropY,
-                width: cropWidth,
-                height: cropHeight,
+            // Clamp crop to the image bounds in object local coords.
+            const halfW = w / 2;
+            const halfH = h / 2;
+            const x1 = Math.max(-halfW, Math.min(halfW, localMinX));
+            const x2 = Math.max(-halfW, Math.min(halfW, localMaxX));
+            const y1 = Math.max(-halfH, Math.min(halfH, localMinY));
+            const y2 = Math.max(-halfH, Math.min(halfH, localMaxY));
+
+            const clipW = Math.max(1, x2 - x1);
+            const clipH = Math.max(1, y2 - y1);
+            const clipCx = (x1 + x2) / 2;
+            const clipCy = (y1 + y2) / 2;
+
+            const clipRect = new fabric.Rect({
+                width: clipW,
+                height: clipH,
+                left: clipCx,
+                top: clipCy,
+                originX: 'center',
+                originY: 'center',
+                selectable: false,
+                evented: false,
+                objectCaching: false,
             });
+            (clipRect as any).absolutePositioned = false;
 
-            // Remove any existing clipPath to avoid conflicts
-            target.set('clipPath', undefined);
-            
+            target.set({
+                clipPath: clipRect,
+            });
             target.dirty = true;
             target.setCoords();
 

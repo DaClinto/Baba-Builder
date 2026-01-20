@@ -11,7 +11,7 @@ import { User } from '@/types';
 
 const Canvas = dynamic(() => import('@/components/Canvas').then(mod => mod.Canvas), {
     ssr: false,
-    loading: () => <div className="flex items-center justify-center h-screen">Baba Builder...</div>,
+    loading: () => <div className="flex items-center justify-center h-screen">Kanvaso...</div>,
 });
 
 export default function DesignPage() {
@@ -29,7 +29,7 @@ export default function DesignPage() {
         }
 
         // Check if user is already stored in session storage
-        const storedUser = sessionStorage.getItem('figma-clone-user');
+        const storedUser = sessionStorage.getItem('kanvaso-user');
 
         if (storedUser) {
             setCurrentUser(JSON.parse(storedUser));
@@ -41,7 +41,7 @@ export default function DesignPage() {
                 color: generateUserColor(),
             };
 
-            sessionStorage.setItem('figma-clone-user', JSON.stringify(newUser));
+            sessionStorage.setItem('kanvaso-user', JSON.stringify(newUser));
             setCurrentUser(newUser);
         }
     }, [setCurrentUser, params, setRoomId]);

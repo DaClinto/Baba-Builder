@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Baba Builder | Create your next masterpiece",
+  title: "Kanvaso | Create your next masterpiece",
   description: "The collaborative design tool built for the next generation of creative minds.",
 };
 
