@@ -393,6 +393,15 @@ export const Canvas = () => {
                 loadedPageRef.current = activePageId;
                 // Update objects state for sidebar
                 setCanvasObjects(fabricCanvasRef.current?.getObjects() || []);
+                
+                // Initialize history with the loaded state (or empty state)
+                if (historyIndex === -1) {
+                    const initialState = canvasState 
+                        ? { ...canvasState, version: Date.now(), timestamp: Date.now() }
+                        : { objects: [], version: Date.now(), timestamp: Date.now() };
+                    setCanvasHistory([initialState]);
+                    setHistoryIndex(0);
+                }
             }, 100);
         });
     }, [canvasState, currentUser?.id, isCanvasReady, isLoading, activePageId]);
@@ -1101,6 +1110,11 @@ export const Canvas = () => {
         const previousState = canvasHistory[historyIndex - 1];
         loadCanvasFromJSON(fabricCanvasRef.current, previousState);
         setHistoryIndex((prev) => prev - 1);
+        
+        // Update objects state for sidebar
+        setTimeout(() => {
+            setCanvasObjects(fabricCanvasRef.current?.getObjects() || []);
+        }, 50);
     }, [historyIndex, canvasHistory]);
 
     // Redo
@@ -1110,6 +1124,11 @@ export const Canvas = () => {
         const nextState = canvasHistory[historyIndex + 1];
         loadCanvasFromJSON(fabricCanvasRef.current, nextState);
         setHistoryIndex((prev) => prev + 1);
+        
+        // Update objects state for sidebar
+        setTimeout(() => {
+            setCanvasObjects(fabricCanvasRef.current?.getObjects() || []);
+        }, 50);
     }, [historyIndex, canvasHistory]);
 
     // Clear canvas

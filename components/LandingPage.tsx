@@ -10,8 +10,10 @@ export const LandingPage = () => {
             {/* Navigation */}
             <nav className="fixed top-0 w-full z-50 px-8 py-6 flex items-center justify-between backdrop-blur-md bg-[#020617]/50 border-b border-white/5">
                 <div className="flex items-center gap-3">
-                    <img src="/assets/kanvaso-logo.svg" alt="Kanvaso" className="w-10 h-10 rounded-xl" />
-                    <span className="text-xl font-black tracking-tighter uppercase">Kanvaso</span>
+                    <div className="w-10 h-10 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
+                        <Sparkles className="w-5 h-5 text-white" />
+                    </div>
+                    <span className="text-xl font-black tracking-tighter uppercase">Baba Builder</span>
                 </div>
                 <div className="hidden md:flex items-center gap-10 text-[11px] font-bold uppercase tracking-widest text-gray-400">
                     <a href="#features" className="hover:text-white transition-colors">Features</a>
