@@ -26,6 +26,10 @@ export const learningModeAtom = atom<boolean>(false);
 export const canvasHistoryAtom = atom<CanvasState[]>([]);
 export const historyIndexAtom = atom<number>(-1);
 
+// Unsaved changes tracking
+export const hasUnsavedChangesAtom = atom<boolean>(false);
+export const lastSavedStateAtom = atom<CanvasState | null>(null);
+
 // Selected shapes
 export const selectedShapesAtom = atom<string[]>([]);
 

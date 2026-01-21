@@ -1,6 +1,6 @@
 'use client';
 
-import { Undo, Redo, Download, Trash2, Eraser, ZoomIn, ZoomOut, Home, Cloud, CloudCheck, ChevronRight, PanelLeft, PanelRight } from 'lucide-react';
+import { Undo, Redo, Download, Trash2, Eraser, ZoomIn, ZoomOut, Home, Cloud, CloudCheck, ChevronRight, PanelLeft, PanelRight, Save, FileImage, FileText } from 'lucide-react';
 import { ActiveUsers } from './ActiveUsers';
 import { User } from '@/types';
 import Link from 'next/link';
@@ -10,6 +10,7 @@ type TopBarProps = {
     activeUsers: User[];
     projectName: string;
     isSaving?: boolean;
+    hasUnsavedChanges?: boolean;
     leftSidebarVisible: boolean;
     rightSidebarVisible: boolean;
     onToggleLeftSidebar: () => void;
@@ -17,10 +18,12 @@ type TopBarProps = {
     onRename: (name: string) => void;
     onUndo: () => void;
     onRedo: () => void;
+    onSave?: () => void;
     onClear: () => void;
     onDeleteProject?: () => void;
     onExport: () => void;
     onExportSVG: () => void;
+    onExportPDF?: () => void;
     onZoomIn: () => void;
     onZoomOut: () => void;
     zoom: number;
@@ -33,6 +36,7 @@ export const TopBar = ({
     activeUsers,
     projectName,
     isSaving,
+    hasUnsavedChanges,
     leftSidebarVisible,
     rightSidebarVisible,
     onToggleLeftSidebar,
@@ -40,10 +44,12 @@ export const TopBar = ({
     onRename,
     onUndo,
     onRedo,
+    onSave,
     onClear,
     onDeleteProject,
     onExport,
     onExportSVG,
+    onExportPDF,
     onZoomIn,
     onZoomOut,
     zoom,
@@ -122,6 +128,24 @@ export const TopBar = ({
 
                 <div className="h-6 w-px bg-gray-300 mx-2" />
 
+                {onSave && (
+                    <button
+                        onClick={onSave}
+                        disabled={!hasUnsavedChanges || isSaving}
+                        className={`px-3 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 text-sm ${
+                            hasUnsavedChanges && !isSaving
+                                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
+                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        }`}
+                        title={hasUnsavedChanges ? "Save to cloud (Ctrl+S)" : "No changes to save"}
+                    >
+                        <Save className="w-4 h-4" />
+                        {isSaving ? 'Saving...' : 'Save'}
+                    </button>
+                )}
+
+                <div className="h-6 w-px bg-gray-300 mx-2" />
+
                 <button
                     onClick={onZoomOut}
                     className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
@@ -164,7 +188,7 @@ export const TopBar = ({
 
                 <button
                     onClick={onExport}
-                    className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors flex items-center gap-2 text-sm"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2 shadow-lg shadow-blue-600/20 text-sm"
                     title="Export as PNG"
                 >
                     <Download className="w-4 h-4" />
@@ -178,6 +202,15 @@ export const TopBar = ({
                 >
                     <Download className="w-4 h-4" />
                     SVG
+                </button>
+
+                <button
+                    onClick={onExportPDF}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2 shadow-lg shadow-red-600/20 text-sm"
+                    title="Export as PDF"
+                >
+                    <FileText className="w-4 h-4" />
+                    PDF
                 </button>
             </div>
 

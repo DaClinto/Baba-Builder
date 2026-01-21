@@ -134,8 +134,13 @@ export const resizeImage = (dataUrl: string, maxWidth = 1000): Promise<string> =
                 resolve(dataUrl);
                 return;
             }
+            
+            // Preserve transparency by not filling background
+            ctx.clearRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/jpeg', 0.85)); // 0.85 quality JPEG
+            
+            // Use PNG format to preserve transparency
+            resolve(canvas.toDataURL('image/png', 0.9)); // PNG format with transparency
         };
         img.onerror = () => resolve(dataUrl);
         img.src = dataUrl;

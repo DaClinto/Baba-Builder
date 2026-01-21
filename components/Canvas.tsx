@@ -11,6 +11,8 @@ import {
     roomIdAtom,
     canvasHistoryAtom,
     historyIndexAtom,
+    hasUnsavedChangesAtom,
+    lastSavedStateAtom,
     isGridEnabledAtom,
     gridSizeAtom,
     learningModeAtom,
@@ -26,8 +28,6 @@ import {
     useCursors,
     useReactions,
     useComments,
-    useCanvasState,
-    usePages,
     useProjectMetadata,
 } from '@/lib/firebase-hooks';
 import { db } from '@/lib/firebase';
@@ -73,6 +73,8 @@ export const Canvas = () => {
     const [roomId] = useAtom(roomIdAtom);
     const [canvasHistory, setCanvasHistory] = useAtom(canvasHistoryAtom);
     const [historyIndex, setHistoryIndex] = useAtom(historyIndexAtom);
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useAtom(hasUnsavedChangesAtom);
+    const [lastSavedState, setLastSavedState] = useAtom(lastSavedStateAtom);
     const [isGridEnabled] = useAtom(isGridEnabledAtom);
     const [gridSize] = useAtom(gridSizeAtom);
     const [learningMode] = useAtom(learningModeAtom);
@@ -98,9 +100,64 @@ export const Canvas = () => {
     const { reactions, addReaction } = useReactions(roomId);
     const { comments, addComment, resolveComment } = useComments(roomId);
 
-    // Pages State
-    const { pages, addPage, deletePage } = usePages(roomId);
-    const [activePageId, setActivePageId] = useState<string>('default');
+    // Pages State (localStorage-backed)
+    const [pages, setPages] = useState<{ id: string; name: string; order: number }[]>([]);
+    const [activePageId, setActivePageId] = useState<string>('');
+
+    const pagesStorageKey = `pages_${roomId}`;
+    const activePageStorageKey = `activePage_${roomId}`;
+    const pageCanvasStorageKey = (pageId: string) => `canvas_${roomId}_${pageId}`;
+
+    const saveCanvasForPage = useCallback(
+        (pageId: string) => {
+            if (!fabricCanvasRef.current) return;
+            const json = fabricCanvasRef.current.toJSON();
+            localStorage.setItem(pageCanvasStorageKey(pageId), JSON.stringify(json));
+        },
+        [roomId]
+    );
+
+    const addPage = useCallback(() => {
+        const nextId = `page_${Date.now()}`;
+        const nextPage = { id: nextId, name: `Page ${pages.length + 1}`, order: pages.length };
+
+        // Save current page before switching
+        if (activePageId) {
+            saveCanvasForPage(activePageId);
+        }
+
+        setPages((prev) => [...prev, nextPage]);
+        setActivePageId(nextId);
+
+        // Initialize empty canvas JSON for the new page so switching never shows old objects
+        if (fabricCanvasRef.current) {
+            fabricCanvasRef.current.clear();
+            fabricCanvasRef.current.backgroundColor = 'transparent';
+            fabricCanvasRef.current.renderAll();
+            setCanvasObjects([]);
+            loadedPageRef.current = nextId;
+            saveCanvasForPage(nextId);
+        }
+    }, [activePageId, pages.length, saveCanvasForPage]);
+
+    const loadCanvasForPage = useCallback(
+        async (pageId: string) => {
+            if (!fabricCanvasRef.current) return;
+            const raw = localStorage.getItem(pageCanvasStorageKey(pageId));
+            if (!raw) return;
+
+            try {
+                const json = JSON.parse(raw);
+                isRemoteUpdate.current = true;
+                await loadCanvasFromJSON(fabricCanvasRef.current, json);
+                loadedPageRef.current = pageId;
+                setCanvasObjects(fabricCanvasRef.current.getObjects());
+            } finally {
+                isRemoteUpdate.current = false;
+            }
+        },
+        [roomId]
+    );
 
     // Project Metadata State
     const { projectData, updateProjectName, updateProjectThumbnail } = useProjectMetadata(roomId);
@@ -117,29 +174,66 @@ export const Canvas = () => {
         updateProjectName(newName);
     }, [updateProjectName, setProjectName]);
 
-    // Auto-select first page if current activePageId is invalid
+    // Initialize pages from localStorage (and ensure a default page exists)
     useEffect(() => {
-        if (pages.length > 0 && !pages.find(p => p.id === activePageId)) {
-            setActivePageId(pages[0].id);
-        }
-    }, [pages, activePageId]);
+        if (!roomId) return;
 
-    // Reset loaded page ref when active page changes
-    // Reset loaded page ref and clear canvas immediately when active page changes
-    useEffect(() => {
-        loadedPageRef.current = null;
-        // Immediate clear to prevent visual bleed of previous page state
-        if (fabricCanvasRef.current) {
-            fabricCanvasRef.current.clear();
-            fabricCanvasRef.current.backgroundColor = '#ffffff';
-            // Reset viewport/zoom? Optional, but keeping zoom is usually preferred in rooms.
-            // fabricCanvasRef.current.setViewportTransform([1, 0, 0, 1, 0, 0]);
-            // fabricCanvasRef.current.setZoom(1);
-            fabricCanvasRef.current.renderAll();
-            // Clear local objects state so sidebar is empty
-            setCanvasObjects([]);
+        const savedPagesRaw = localStorage.getItem(pagesStorageKey);
+        const savedActive = localStorage.getItem(activePageStorageKey);
+
+        let nextPages: { id: string; name: string; order: number }[] = [];
+        try {
+            nextPages = savedPagesRaw ? JSON.parse(savedPagesRaw) : [];
+        } catch {
+            nextPages = [];
         }
-    }, [activePageId]);
+
+        if (!Array.isArray(nextPages) || nextPages.length === 0) {
+            nextPages = [{ id: 'default', name: 'Page 1', order: 0 }];
+        }
+
+        setPages(nextPages);
+
+        const nextActive = savedActive && nextPages.some(p => p.id === savedActive)
+            ? savedActive
+            : nextPages[0].id;
+
+        setActivePageId(nextActive);
+        localStorage.setItem(activePageStorageKey, nextActive);
+    }, [roomId, pagesStorageKey, activePageStorageKey]);
+
+    // Persist pages list + active page selection
+    useEffect(() => {
+        if (!roomId) return;
+        if (pages.length > 0) {
+            localStorage.setItem(pagesStorageKey, JSON.stringify(pages));
+        }
+    }, [roomId, pages, pagesStorageKey]);
+
+    useEffect(() => {
+        if (!roomId || !activePageId) return;
+        localStorage.setItem(activePageStorageKey, activePageId);
+    }, [roomId, activePageId, activePageStorageKey]);
+
+    // When the active page changes, restore its saved canvas JSON (do not clear without restoring)
+    useEffect(() => {
+        if (!isCanvasReady || !fabricCanvasRef.current || !activePageId) return;
+        if (loadedPageRef.current === activePageId) return;
+
+        const raw = localStorage.getItem(pageCanvasStorageKey(activePageId));
+        if (!raw) {
+            // No saved state yet (new page): clear to empty and persist an empty JSON.
+            fabricCanvasRef.current.clear();
+            fabricCanvasRef.current.backgroundColor = 'transparent';
+            fabricCanvasRef.current.renderAll();
+            setCanvasObjects([]);
+            loadedPageRef.current = activePageId;
+            saveCanvasForPage(activePageId);
+            return;
+        }
+
+        loadCanvasForPage(activePageId);
+    }, [activePageId, isCanvasReady, loadCanvasForPage, saveCanvasForPage, roomId]);
 
     const handleDeletePage = async (pageId: string) => {
         if (pages.length <= 1) {
@@ -147,16 +241,21 @@ export const Canvas = () => {
             return;
         }
 
-        // If deleting active page, switch first
-        if (activePageId === pageId) {
-            const other = pages.find(p => p.id !== pageId);
-            if (other) setActivePageId(other.id);
-        }
+        // Remove page + its saved canvas JSON
+        const remaining = pages.filter(p => p.id !== pageId);
+        setPages(remaining);
+        localStorage.removeItem(pageCanvasStorageKey(pageId));
 
-        await deletePage(pageId);
+        // If deleting active page, switch to a remaining one and restore its JSON
+        if (activePageId === pageId) {
+            const next = remaining[0];
+            if (next) {
+                setActivePageId(next.id);
+            }
+        }
     };
 
-    const { canvasState, saveCanvasState, isLoading } = useCanvasState(roomId, activePageId);
+    const isLoading = false;
 
     // Cursor Chat State
     const [isCursorChatOpen, setIsCursorChatOpen] = useState(false);
@@ -184,7 +283,7 @@ export const Canvas = () => {
         const canvas = new fabric.Canvas(canvasRef.current, {
             width: window.innerWidth,
             height: window.innerHeight - 64, // Subtract top bar height
-            backgroundColor: '#ffffff',
+            backgroundColor: 'transparent', // Transparent background to preserve image transparency
             selection: true,
             enableRetinaScaling: true, // IMPORTANT: Enables HiDPI/Retina scaling
         });
@@ -232,7 +331,7 @@ export const Canvas = () => {
                         });
                         canvas.setActiveObject(target);
                         canvas.requestRenderAll();
-                        saveCanvas();
+                        saveToHistory();
                     }
                     return;
                 }
@@ -361,76 +460,61 @@ export const Canvas = () => {
         };
     }, [leftSidebarVisible, rightSidebarVisible, isCanvasReady]);
 
-    // Load canvas state from Firebase
-    useEffect(() => {
-        if (!isCanvasReady || !fabricCanvasRef.current || isLoading) return;
+    // (Removed Firebase canvas state syncing; per-page state is now localStorage-backed.)
 
-        if (!canvasState) {
-            // New/Empty page - Clear canvas
-            console.log("Empty canvas state, clearing canvas");
-            fabricCanvasRef.current.clear();
-            fabricCanvasRef.current.backgroundColor = '#ffffff';
-            fabricCanvasRef.current.renderAll();
-            setCanvasObjects([]);
-            loadedPageRef.current = activePageId;
-            return;
-        }
-
-        // Prevent loop if we just saved it or if WE are the last modifier
-        // BUT only if we have already loaded this page (to allow reloading when switching back)
-        if (canvasState.lastModifiedBy === currentUser?.id && loadedPageRef.current === activePageId) {
-            return;
-        }
-
-        console.log("Loading canvas state from Firebase");
-        // ... rest of load logic
-
-        isRemoteUpdate.current = true;
-        loadCanvasFromJSON(fabricCanvasRef.current, canvasState).finally(() => {
-            // Small delay to ensure all events are processed before re-enabling save
-            setTimeout(() => {
-                isRemoteUpdate.current = false;
-                loadedPageRef.current = activePageId;
-                // Update objects state for sidebar
-                setCanvasObjects(fabricCanvasRef.current?.getObjects() || []);
-                
-                // Initialize history with the loaded state (or empty state)
-                if (historyIndex === -1) {
-                    const initialState = canvasState 
-                        ? { ...canvasState, version: Date.now(), timestamp: Date.now() }
-                        : { objects: [], version: Date.now(), timestamp: Date.now() };
-                    setCanvasHistory([initialState]);
-                    setHistoryIndex(0);
-                }
-            }, 100);
-        });
-    }, [canvasState, currentUser?.id, isCanvasReady, isLoading, activePageId]);
-
-    // Save canvas state to Firebase (debounced)
-    const saveCanvas = useCallback(
-        debounce(async () => {
+    // Local-only save to history (no cloud sync)
+    const saveToHistory = useCallback(
+        debounce(() => {
             if (!fabricCanvasRef.current) return;
-            setIsSaving(true);
 
             const state = serializeCanvas(fabricCanvasRef.current);
-            await saveCanvasState({ ...state, userId: currentUser?.id });
-
-            // Add to history
+            
+            // Add to local history
             const newState = { ...state, version: Date.now(), timestamp: Date.now() };
             setCanvasHistory((prev) => [...prev.slice(0, historyIndex + 1), newState]);
             setHistoryIndex((prev) => prev + 1);
-            setIsSaving(false);
+            
+            // Mark as having unsaved changes
+            setHasUnsavedChanges(true);
+        }, 300), // Faster debounce for local history
+        [historyIndex]
+    );
+
+    // Manual save to cloud (user-initiated)
+    const saveToCloud = useCallback(async () => {
+        if (!fabricCanvasRef.current) return;
+        
+        setIsSaving(true);
+        try {
+            // Persist current page JSON locally
+            if (activePageId) {
+                saveCanvasForPage(activePageId);
+            }
+
+            const state = serializeCanvas(fabricCanvasRef.current);
+
+            // Update last saved state and clear unsaved changes flag
+            setLastSavedState(state);
+            setHasUnsavedChanges(false);
+
+            // Reset history to current state as new baseline
+            const baselineState = { ...state, version: Date.now(), timestamp: Date.now() };
+            setCanvasHistory([baselineState]);
+            setHistoryIndex(0);
 
             // Export thumbnail
             const thumbnail = fabricCanvasRef.current.toDataURL({
                 format: 'jpeg',
-                multiplier: 0.1, // Small thumbnail
+                multiplier: 0.1,
                 quality: 0.1,
             });
             updateProjectThumbnail(thumbnail);
-        }, 500),
-        [saveCanvasState, historyIndex, setIsSaving, currentUser?.id, updateProjectThumbnail]
-    );
+        } catch (error) {
+            console.error('Failed to save to cloud:', error);
+        } finally {
+            setIsSaving(false);
+        }
+    }, [activePageId, saveCanvasForPage, setHasUnsavedChanges, setLastSavedState, setCanvasHistory, setHistoryIndex, updateProjectThumbnail]);
 
     // Handle mouse move for cursor tracking
     const handleMouseMove = useCallback(
@@ -470,7 +554,7 @@ export const Canvas = () => {
         // Handle object modifications
         const handleObjectModified = () => {
             if (isRemoteUpdate.current) return;
-            saveCanvas();
+            saveToHistory();
             setCanvasObjects(canvas.getObjects());
         };
 
@@ -506,7 +590,7 @@ export const Canvas = () => {
             canvas.off('selection:cleared', handleSelectionCleared);
             canvas.off('path:created', handleObjectModified);
         };
-    }, [isCanvasReady, saveCanvas]);
+    }, [isCanvasReady, saveToHistory]);
 
     // Grid Visuals and Snapping
     useEffect(() => {
@@ -535,10 +619,31 @@ export const Canvas = () => {
             });
             canvas.backgroundColor = pattern;
         } else {
-            canvas.backgroundColor = '#ffffff';
+            canvas.backgroundColor = 'transparent'; // Transparent background
         }
         canvas.requestRenderAll();
     }, [isGridEnabled, gridSize, isCanvasReady]);
+
+    // Define snap function at component level for use in multiple places
+    const snap = useCallback((val: number, width?: number) => {
+        // For top-right corner anchoring, adjust position based on width
+        let adjustedVal = val;
+        if (width) {
+            // Convert from top-left to top-right corner position
+            adjustedVal = val - width;
+        }
+        
+        // Snap to 2px grid
+        const snapped = Math.round(adjustedVal / 2) * 2;
+        if (Math.abs(adjustedVal - snapped) < 1) { // 1px threshold for integer-only positioning
+            if (width) {
+                // Convert back to top-left coordinates
+                return snapped + width;
+            }
+            return snapped;
+        }
+        return val;
+    }, []);
 
     // Snapping Logic
     useEffect(() => {
@@ -550,16 +655,8 @@ export const Canvas = () => {
             const target = options.target;
             if (!target) return;
 
-            const snap = (val: number) => {
-                const closest = Math.round(val / gridSize) * gridSize;
-                if (Math.abs(val - closest) < 10) { // 10px threshold
-                    return closest;
-                }
-                return val;
-            };
-
             target.set({
-                left: snap(target.left || 0),
+                left: snap(target.left || 0, target.width),
                 top: snap(target.top || 0),
             });
         };
@@ -631,7 +728,9 @@ export const Canvas = () => {
                         left: centerX,
                         top: centerY,
                         originX: 'center',
-                        originY: 'center'
+                        originY: 'center',
+                        // Ensure transparency is preserved
+                        backgroundColor: 'transparent'
                     });
 
                     // Scale to reasonable size
@@ -643,7 +742,7 @@ export const Canvas = () => {
                     canvas.add(img);
                     canvas.setActiveObject(img);
                     canvas.requestRenderAll();
-                    saveCanvas();
+                    saveToHistory();
                     setGlobalLoading(null);
                 } catch (err) {
                     console.error('Error loading image:', err);
@@ -666,7 +765,7 @@ export const Canvas = () => {
             };
             input.click();
         }
-    }, [saveCanvas, setGlobalLoading]);
+    }, [saveToHistory, setGlobalLoading]);
 
     // Handle Paste Events
     useEffect(() => {
@@ -714,24 +813,36 @@ export const Canvas = () => {
             let shape;
             switch (selectedTool) {
                 case 'rectangle':
-                    shape = createShapeByType(ShapeType.Rectangle, { left: pointer.x, top: pointer.y });
+                    shape = createShapeByType(ShapeType.Rectangle, { 
+                        left: pointer.x, 
+                        top: pointer.y 
+                    });
                     break;
                 case 'circle':
-                    shape = createShapeByType(ShapeType.Circle, { left: pointer.x, top: pointer.y });
+                    shape = createShapeByType(ShapeType.Circle, { 
+                        left: pointer.x, 
+                        top: pointer.y 
+                    });
                     break;
                 case 'triangle':
-                    shape = createShapeByType(ShapeType.Triangle, { left: pointer.x, top: pointer.y });
+                    shape = createShapeByType(ShapeType.Triangle, { 
+                        left: pointer.x, 
+                        top: pointer.y 
+                    });
                     break;
                 case 'line':
                     shape = createShapeByType(ShapeType.Line, {
                         x1: pointer.x,
                         y1: pointer.y,
                         x2: pointer.x + 100,
-                        y2: pointer.y,
+                        y2: pointer.y
                     });
                     break;
                 case 'text':
-                    shape = createShapeByType(ShapeType.Text, { left: pointer.x, top: pointer.y });
+                    shape = createShapeByType(ShapeType.Text, { 
+                        left: pointer.x, 
+                        top: pointer.y 
+                    });
                     break;
                 case 'frame':
                     shape = createShapeByType(ShapeType.Rectangle, {
@@ -756,7 +867,7 @@ export const Canvas = () => {
                 canvas.add(shape);
                 canvas.setActiveObject(shape);
                 canvas.renderAll();
-                saveCanvas();
+                saveToHistory();
                 setSelectedTool('select');
             }
         };
@@ -766,7 +877,7 @@ export const Canvas = () => {
         return () => {
             canvas.off('mouse:down', handleCanvasClick);
         };
-    }, [selectedTool, isCanvasReady, currentUser, addComment, saveCanvas, handleImageUpload, setSelectedTool]);
+    }, [selectedTool, isCanvasReady, currentUser, addComment, saveToHistory, handleImageUpload, setSelectedTool]);
 
     useEffect(() => {
         const canvas = fabricCanvasRef.current;
@@ -954,7 +1065,7 @@ export const Canvas = () => {
             canvas.setActiveObject(target);
             canvas.requestRenderAll();
             canvas.fire('object:modified');
-            saveCanvas();
+            saveToHistory();
             setSelectedTool('select');
         };
 
@@ -967,7 +1078,7 @@ export const Canvas = () => {
             canvas.off('mouse:move', handleCropMouseMove);
             canvas.off('mouse:up', handleCropMouseUp);
         };
-    }, [selectedTool, isCanvasReady, saveCanvas, setSelectedTool]);
+    }, [selectedTool, isCanvasReady, saveToHistory, setSelectedTool]);
 
     useEffect(() => {
         if (selectedTool !== 'crop') return;
@@ -1017,6 +1128,15 @@ export const Canvas = () => {
             const canvas = fabricCanvasRef.current;
             if (!canvas) return;
 
+            // Ctrl/Cmd + S (Save)
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                if (hasUnsavedChanges && !isSaving) {
+                    saveToCloud();
+                }
+                return;
+            }
+
             // Delete key
             if (e.key === 'Delete' || e.key === 'Backspace') {
                 const active = canvas.getActiveObjects();
@@ -1025,7 +1145,7 @@ export const Canvas = () => {
                     if (activeObj && (activeObj as any).isEditing) return; // Don't delete if editing text
 
                     deleteSelectedObjects(canvas);
-                    saveCanvas();
+                    saveToHistory();
                 }
             }
 
@@ -1074,7 +1194,7 @@ export const Canvas = () => {
                 });
                 canvas.discardActiveObject();
                 canvas.requestRenderAll();
-                saveCanvas();
+                saveToHistory();
             }
 
             // Ctrl/Cmd + Shift + L (Unlock All)
@@ -1095,13 +1215,13 @@ export const Canvas = () => {
                     }
                 });
                 canvas.requestRenderAll();
-                saveCanvas();
+                saveToHistory();
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [saveCanvas, historyIndex, canvasHistory]);
+    }, [saveToHistory, historyIndex, canvasHistory, hasUnsavedChanges, isSaving, saveToCloud]);
 
     // Undo
     const handleUndo = useCallback(() => {
@@ -1136,9 +1256,9 @@ export const Canvas = () => {
         if (!fabricCanvasRef.current) return;
         if (confirm('Are you sure you want to clear the canvas?')) {
             clearCanvasUtil(fabricCanvasRef.current);
-            saveCanvas();
+            saveToHistory();
         }
-    }, [saveCanvas]);
+    }, [saveToHistory]);
 
     // Delete entire project
     const handleDeleteProject = useCallback(async () => {
@@ -1181,6 +1301,29 @@ export const Canvas = () => {
         link.download = 'design.svg';
         link.click();
         URL.revokeObjectURL(url);
+    }, []);
+
+    // Export canvas as PDF
+    const handleExportPDF = useCallback(() => {
+        if (!fabricCanvasRef.current) return;
+        
+        // Create a new jsPDF instance
+        const { jsPDF } = require('jspdf');
+        const pdf = new jsPDF({
+            orientation: 'landscape',
+            unit: 'px',
+            format: [fabricCanvasRef.current.width!, fabricCanvasRef.current.height!]
+        });
+        
+        // Get canvas as image
+        const dataURL = fabricCanvasRef.current.toDataURL({
+            format: 'png',
+            multiplier: 2
+        });
+        
+        // Add image to PDF
+        pdf.addImage(dataURL, 'PNG', 0, 0, fabricCanvasRef.current.width!, fabricCanvasRef.current.height!);
+        pdf.save('design.pdf');
     }, []);
 
     // Zoom
@@ -1265,10 +1408,14 @@ export const Canvas = () => {
     }, []);
 
     const handlePageSwitch = (newPageId: string) => {
-        // Force save current state before switching
-        if (saveCanvas && (saveCanvas as any).flush) {
-            (saveCanvas as any).flush();
+        if (!newPageId || newPageId === activePageId) return;
+
+        // Save current page JSON before switching
+        if (activePageId) {
+            saveCanvasForPage(activePageId);
         }
+
+        // Switch to new page (load effect will restore its JSON)
         setActivePageId(newPageId);
     };
 
@@ -1280,6 +1427,7 @@ export const Canvas = () => {
                 activeUsers={mappedActiveUsers}
                 projectName={projectName}
                 isSaving={isSaving}
+                hasUnsavedChanges={hasUnsavedChanges}
                 leftSidebarVisible={leftSidebarVisible}
                 rightSidebarVisible={rightSidebarVisible}
                 onToggleLeftSidebar={() => setLeftSidebarVisible(!leftSidebarVisible)}
@@ -1287,10 +1435,12 @@ export const Canvas = () => {
                 onRename={handleRename}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
+                onSave={saveToCloud}
                 onClear={handleClear}
                 onDeleteProject={handleDeleteProject}
                 onExport={handleExport}
                 onExportSVG={handleExportSVG}
+                onExportPDF={handleExportPDF}
                 onZoomIn={handleZoomIn}
                 onZoomOut={handleZoomOut}
                 zoom={zoom}
@@ -1308,7 +1458,7 @@ export const Canvas = () => {
                     onReorder={handleLayerReorder}
                     pages={pages}
                     activePageId={activePageId}
-                    onAddPage={() => addPage(`Page ${pages.length + 1}`)}
+                    onAddPage={addPage}
                     onSelectPage={handlePageSwitch}
                     onDeletePage={handleDeletePage}
                 />
