@@ -10,17 +10,24 @@ type ReactionProps = {
 export const Reaction = ({ reaction }: ReactionProps) => {
     return (
         <motion.div
-            initial={{ opacity: 0, y: 0, scale: 1 }}
-            animate={{ opacity: 1, y: -50, scale: 1.5 }}
-            exit={{ opacity: 0, y: -80, scale: 0.5 }}
-            transition={{ duration: 2, ease: 'easeOut' }}
+            initial={{ opacity: 0, y: 0, scale: 0.5 }}
+            animate={{
+                opacity: [0, 1, 1, 0.5, 0],
+                y: [0, -40, -60, -80, -100],
+                scale: [0.5, 1.5, 1.5, 1.2, 0.8]
+            }}
+            transition={{
+                duration: 6,
+                times: [0, 0.1, 0.8, 0.9, 1],
+                ease: "easeOut"
+            }}
             style={{
                 position: 'absolute',
                 left: reaction.position.x,
                 top: reaction.position.y,
                 pointerEvents: 'none',
                 zIndex: 999,
-                fontSize: '2rem',
+                fontSize: '2.5rem',
             }}
             className="reaction"
         >

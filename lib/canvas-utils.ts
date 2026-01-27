@@ -10,11 +10,12 @@ export const createRectangle = (options: any = {}): CanvasObject => {
     const rect = new fabric.Rect({
         left: 100,
         top: 100,
-        fill: '#3b82f6',
+        fill: '#D9D9D9',
         width: 200,
         height: 150,
-        stroke: '#1e40af',
-        strokeWidth: 2,
+        stroke: 'transparent',
+        strokeWidth: 0,
+        strokeUniform: true,
         ...options,
     }) as CanvasObject;
     rect.objectId = generateObjectId();
@@ -26,10 +27,11 @@ export const createCircle = (options: any = {}): CanvasObject => {
     const circle = new fabric.Circle({
         left: 100,
         top: 100,
-        fill: '#10b981',
+        fill: '#D9D9D9',
         radius: 75,
-        stroke: '#059669',
-        strokeWidth: 2,
+        stroke: 'transparent',
+        strokeWidth: 0,
+        strokeUniform: true,
         ...options,
     }) as CanvasObject;
     circle.objectId = generateObjectId();
@@ -41,11 +43,12 @@ export const createTriangle = (options: any = {}): CanvasObject => {
     const triangle = new fabric.Triangle({
         left: 100,
         top: 100,
-        fill: '#f59e0b',
+        fill: '#D9D9D9',
         width: 150,
         height: 150,
-        stroke: '#d97706',
-        strokeWidth: 2,
+        stroke: 'transparent',
+        strokeWidth: 0,
+        strokeUniform: true,
         ...options,
     }) as CanvasObject;
     triangle.objectId = generateObjectId();
@@ -54,8 +57,14 @@ export const createTriangle = (options: any = {}): CanvasObject => {
 
 // Create a line
 export const createLine = (options: any = {}): CanvasObject => {
-    const line = new fabric.Line([50, 50, 250, 50], {
-        stroke: '#ef4444',
+    const coords: [number, number, number, number] = [
+        options.x1 !== undefined ? options.x1 : 50,
+        options.y1 !== undefined ? options.y1 : 50,
+        options.x2 !== undefined ? options.x2 : 250,
+        options.y2 !== undefined ? options.y2 : 50,
+    ];
+    const line = new fabric.Line(coords, {
+        stroke: '#000000',
         strokeWidth: 3,
         ...options,
     }) as CanvasObject;
@@ -68,13 +77,35 @@ export const createText = (text: string = 'Text', options: any = {}): CanvasObje
     const textObj = new fabric.IText(text, {
         left: 100,
         top: 100,
-        fill: '#1f2937',
+        fill: '#000000',
         fontSize: 32,
         fontFamily: 'Inter, sans-serif',
         ...options,
     }) as CanvasObject;
     textObj.objectId = generateObjectId();
     return textObj;
+};
+
+// Create a frame (container)
+export const createFrame = (options: any = {}): CanvasObject => {
+    const frame = new fabric.Rect({
+        left: 100,
+        top: 100,
+        fill: '#FFFFFF',
+        width: 1440,
+        height: 1024,
+        stroke: '#E5E7EB', // Light gray border
+        strokeWidth: 1,
+        objectCaching: false,
+        name: 'Frame', // Helpful for identifying
+        isFrame: true,
+        ...options,
+    }) as CanvasObject;
+    frame.objectId = generateObjectId();
+
+    // Frames should usually be sent to back or have valid z-index, 
+    // but for now we just create it.
+    return frame;
 };
 
 // Serialize canvas to JSON
@@ -125,6 +156,29 @@ export const downloadCanvasAsImage = (canvas: fabric.Canvas, filename: string = 
     link.click();
 };
 
+export const exportCanvasAsJPG = (canvas: fabric.Canvas, filename: string = 'design') => {
+    // JPG doesn't support transparency, so we ensure a white background if transparent
+    const originalBg = canvas.backgroundColor;
+    if (originalBg === 'transparent' || !originalBg) {
+        canvas.backgroundColor = '#ffffff';
+    }
+
+    const dataURL = canvas.toDataURL({
+        format: 'jpeg',
+        quality: 0.9,
+        multiplier: 2, // High res
+    });
+
+    // Restore background
+    canvas.backgroundColor = originalBg;
+    canvas.renderAll();
+
+    const link = document.createElement('a');
+    link.download = `${filename}.jpg`;
+    link.href = dataURL;
+    link.click();
+};
+
 // Get shape by type
 export const createShapeByType = (type: ShapeType, options: any = {}): CanvasObject | null => {
     switch (type) {
@@ -138,6 +192,8 @@ export const createShapeByType = (type: ShapeType, options: any = {}): CanvasObj
             return createLine(options);
         case ShapeType.Text:
             return createText('Text', options);
+        case ShapeType.Frame:
+            return createFrame(options);
         default:
             return null;
     }
@@ -225,6 +281,34 @@ export const distributeObjects = (canvas: fabric.Canvas, type: 'horizontal' | 'v
 
         activeObjects.forEach((obj, i) => {
             obj.set({ top: first.top! + i * interval });
+        });
+    }
+
+    canvas.requestRenderAll();
+    canvas.fire('object:modified');
+};
+
+export const setGap = (canvas: fabric.Canvas, type: 'horizontal' | 'vertical', gap: number) => {
+    const activeObjects = canvas.getActiveObjects();
+    if (activeObjects.length < 2) return;
+
+    if (type === 'horizontal') {
+        activeObjects.sort((a, b) => a.left! - b.left!);
+        let currentLeft = activeObjects[0].getBoundingRect().left;
+        activeObjects.forEach((obj) => {
+            const bounds = obj.getBoundingRect();
+            const offset = obj.left! - bounds.left;
+            obj.set({ left: currentLeft + offset });
+            currentLeft += bounds.width + gap;
+        });
+    } else {
+        activeObjects.sort((a, b) => a.top! - b.top!);
+        let currentTop = activeObjects[0].getBoundingRect().top;
+        activeObjects.forEach((obj) => {
+            const bounds = obj.getBoundingRect();
+            const offset = obj.top! - bounds.top;
+            obj.set({ top: currentTop + offset });
+            currentTop += bounds.height + gap;
         });
     }
 

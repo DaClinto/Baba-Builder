@@ -41,8 +41,10 @@ import {
     deleteSelectedObjects,
     alignObjects,
     distributeObjects,
+    exportCanvasAsJPG,
 } from '@/lib/canvas-utils';
 import { setupFabricControls } from '@/lib/fabric-controls';
+import { initSmartGuides } from '@/lib/smart-guides';
 import { v4 as uuidv4 } from 'uuid';
 import { ShapeType, User, ToolType } from '@/types';
 import { throttle, debounce, resizeImage } from '@/lib/utils';
@@ -104,9 +106,9 @@ export const Canvas = () => {
     const [pages, setPages] = useState<{ id: string; name: string; order: number }[]>([]);
     const [activePageId, setActivePageId] = useState<string>('');
 
-    const pagesStorageKey = `pages_${roomId}`;
-    const activePageStorageKey = `activePage_${roomId}`;
-    const pageCanvasStorageKey = (pageId: string) => `canvas_${roomId}_${pageId}`;
+    const pagesStorageKey = currentUser ? `pages_${roomId}_${currentUser.id}` : `pages_${roomId}`;
+    const activePageStorageKey = currentUser ? `activePage_${roomId}_${currentUser.id}` : `activePage_${roomId}`;
+    const pageCanvasStorageKey = (pageId: string) => currentUser ? `canvas_${roomId}_${pageId}_${currentUser.id}` : `canvas_${roomId}_${pageId}`;
 
     const saveCanvasForPage = useCallback(
         (pageId: string) => {
@@ -176,7 +178,7 @@ export const Canvas = () => {
 
     // Initialize pages from localStorage (and ensure a default page exists)
     useEffect(() => {
-        if (!roomId) return;
+        if (!roomId || !currentUser) return;
 
         const savedPagesRaw = localStorage.getItem(pagesStorageKey);
         const savedActive = localStorage.getItem(activePageStorageKey);
@@ -204,20 +206,20 @@ export const Canvas = () => {
 
     // Persist pages list + active page selection
     useEffect(() => {
-        if (!roomId) return;
+        if (!roomId || !currentUser) return;
         if (pages.length > 0) {
             localStorage.setItem(pagesStorageKey, JSON.stringify(pages));
         }
     }, [roomId, pages, pagesStorageKey]);
 
     useEffect(() => {
-        if (!roomId || !activePageId) return;
+        if (!roomId || !activePageId || !currentUser) return;
         localStorage.setItem(activePageStorageKey, activePageId);
     }, [roomId, activePageId, activePageStorageKey]);
 
     // When the active page changes, restore its saved canvas JSON (do not clear without restoring)
     useEffect(() => {
-        if (!isCanvasReady || !fabricCanvasRef.current || !activePageId) return;
+        if (!isCanvasReady || !fabricCanvasRef.current || !activePageId || !currentUser) return;
         if (loadedPageRef.current === activePageId) return;
 
         const raw = localStorage.getItem(pageCanvasStorageKey(activePageId));
@@ -269,6 +271,12 @@ export const Canvas = () => {
     const [selectedObjects, setSelectedObjects] = useState<fabric.Object[]>([]);
     const [canvasObjects, setCanvasObjects] = useState<fabric.Object[]>([]);
 
+    const captureStateRef = useRef<{
+        isCapturing: boolean;
+        startPoint: fabric.Point | null;
+        rect: fabric.Rect | null;
+    }>({ isCapturing: false, startPoint: null, rect: null });
+
     const cropStateRef = useRef<{
         isCropping: boolean;
         target: fabric.Object | null;
@@ -289,6 +297,7 @@ export const Canvas = () => {
         });
 
         fabricCanvasRef.current = canvas;
+        initSmartGuides(canvas);
         setIsCanvasReady(true);
 
         const isPanningRef = { current: false };
@@ -345,6 +354,30 @@ export const Canvas = () => {
                 canvas.defaultCursor = 'grabbing';
                 opt.e.preventDefault();
             }
+
+            // Capture initialization
+            if (selectedTool === 'capture' && e.button === 0 && !isPanningRef.current) {
+                const pointer = canvas.getScenePoint(e);
+                captureStateRef.current.isCapturing = true;
+                captureStateRef.current.startPoint = pointer;
+
+                const rect = new fabric.Rect({
+                    left: pointer.x,
+                    top: pointer.y,
+                    width: 0,
+                    height: 0,
+                    fill: 'rgba(59, 130, 246, 0.1)',
+                    stroke: '#3b82f6',
+                    strokeWidth: 2,
+                    strokeDashArray: [5, 5],
+                    selectable: false,
+                    evented: false,
+                });
+
+                captureStateRef.current.rect = rect;
+                canvas.add(rect);
+                canvas.requestRenderAll();
+            }
         };
 
         const handleMouseMove = (opt: any) => {
@@ -357,9 +390,57 @@ export const Canvas = () => {
                     canvas.requestRenderAll();
                 }
             }
+
+            if (captureStateRef.current.isCapturing && captureStateRef.current.rect) {
+                const pointer = canvas.getScenePoint(opt.e);
+                const start = captureStateRef.current.startPoint!;
+
+                const left = Math.min(start.x, pointer.x);
+                const top = Math.min(start.y, pointer.y);
+                const width = Math.abs(start.x - pointer.x);
+                const height = Math.abs(start.y - pointer.y);
+
+                captureStateRef.current.rect.set({ left, top, width, height });
+                canvas.requestRenderAll();
+            }
         };
 
-        const handleMouseUp = () => {
+        const handleMouseUp = (opt: any) => {
+            if (captureStateRef.current.isCapturing && captureStateRef.current.rect) {
+                const rect = captureStateRef.current.rect;
+
+                // Use scene coordinates for the capture
+                const left = rect.left || 0;
+                const top = rect.top || 0;
+                const width = (rect.width || 0) * (rect.scaleX || 1);
+                const height = (rect.height || 0) * (rect.scaleY || 1);
+
+                if (width > 5 && height > 5) {
+                    canvas.remove(rect); // Remove dashed rect before capture
+
+                    const dataURL = canvas.toDataURL({
+                        left,
+                        top,
+                        width,
+                        height,
+                        format: 'png',
+                        multiplier: 2, // High resolution snip
+                    });
+
+                    const link = document.createElement('a');
+                    link.download = `snip-${Date.now()}.png`;
+                    link.href = dataURL;
+                    link.click();
+                } else {
+                    canvas.remove(rect);
+                }
+
+                captureStateRef.current.isCapturing = false;
+                captureStateRef.current.rect = null;
+                setSelectedTool('select');
+                canvas.requestRenderAll();
+            }
+
             isPanningRef.current = false;
             setIsPanning(false);
             canvas.selection = true;
@@ -385,8 +466,8 @@ export const Canvas = () => {
         canvas.on('mouse:wheel', handleWheel);
         canvas.on('mouse:down', handleMouseDown);
         canvas.on('mouse:move', handleMouseMove);
-        canvas.on('mouse:up', () => {
-            handleMouseUp();
+        canvas.on('mouse:up', (opt) => {
+            handleMouseUp(opt);
             setRadiusTooltip(null);
         });
 
@@ -429,27 +510,28 @@ export const Canvas = () => {
             canvas.off('mouse:wheel', handleWheel);
             canvas.off('mouse:down', handleMouseDown);
             canvas.off('mouse:move', handleMouseMove);
-            canvas.off('mouse:up', handleMouseUp);
+            canvas.off('mouse:up', handleMouseUp as any);
             canvas.dispose();
             fabricCanvasRef.current = null;
             setIsCanvasReady(false);
         };
     }, []);
 
-    // Resize canvas when sidebars are toggled
-    useEffect(() => {
+    // Resize canvas
+    const handleResize = useCallback(() => {
         const canvas = fabricCanvasRef.current;
         if (!canvas || !isCanvasReady) return;
 
-        const handleResize = () => {
-            const width = window.innerWidth - (leftSidebarVisible ? 240 : 0) - (rightSidebarVisible ? 256 : 0);
-            canvas.setDimensions({
-                width: width,
-                height: window.innerHeight - 64,
-            });
-            canvas.renderAll();
-        };
+        const width = window.innerWidth - (leftSidebarVisible ? 240 : 0) - (rightSidebarVisible ? 256 : 0);
+        canvas.setDimensions({
+            width: width,
+            height: window.innerHeight - 64,
+        });
+        canvas.renderAll();
+    }, [leftSidebarVisible, rightSidebarVisible, isCanvasReady]);
 
+    // Resize canvas when sidebars are toggled
+    useEffect(() => {
         // Delay slightly to ensure DOM has updated for the transition
         const timeoutId = setTimeout(handleResize, 50);
 
@@ -458,7 +540,7 @@ export const Canvas = () => {
             window.removeEventListener('resize', handleResize);
             clearTimeout(timeoutId);
         };
-    }, [leftSidebarVisible, rightSidebarVisible, isCanvasReady]);
+    }, [handleResize]);
 
     // (Removed Firebase canvas state syncing; per-page state is now localStorage-backed.)
 
@@ -468,12 +550,12 @@ export const Canvas = () => {
             if (!fabricCanvasRef.current) return;
 
             const state = serializeCanvas(fabricCanvasRef.current);
-            
+
             // Add to local history
             const newState = { ...state, version: Date.now(), timestamp: Date.now() };
             setCanvasHistory((prev) => [...prev.slice(0, historyIndex + 1), newState]);
             setHistoryIndex((prev) => prev + 1);
-            
+
             // Mark as having unsaved changes
             setHasUnsavedChanges(true);
         }, 300), // Faster debounce for local history
@@ -483,7 +565,7 @@ export const Canvas = () => {
     // Manual save to cloud (user-initiated)
     const saveToCloud = useCallback(async () => {
         if (!fabricCanvasRef.current) return;
-        
+
         setIsSaving(true);
         try {
             // Persist current page JSON locally
@@ -632,7 +714,7 @@ export const Canvas = () => {
             // Convert from top-left to top-right corner position
             adjustedVal = val - width;
         }
-        
+
         // Snap to 2px grid
         const snapped = Math.round(adjustedVal / 2) * 2;
         if (Math.abs(adjustedVal - snapped) < 1) { // 1px threshold for integer-only positioning
@@ -813,21 +895,21 @@ export const Canvas = () => {
             let shape;
             switch (selectedTool) {
                 case 'rectangle':
-                    shape = createShapeByType(ShapeType.Rectangle, { 
-                        left: pointer.x, 
-                        top: pointer.y 
+                    shape = createShapeByType(ShapeType.Rectangle, {
+                        left: pointer.x,
+                        top: pointer.y
                     });
                     break;
                 case 'circle':
-                    shape = createShapeByType(ShapeType.Circle, { 
-                        left: pointer.x, 
-                        top: pointer.y 
+                    shape = createShapeByType(ShapeType.Circle, {
+                        left: pointer.x,
+                        top: pointer.y
                     });
                     break;
                 case 'triangle':
-                    shape = createShapeByType(ShapeType.Triangle, { 
-                        left: pointer.x, 
-                        top: pointer.y 
+                    shape = createShapeByType(ShapeType.Triangle, {
+                        left: pointer.x,
+                        top: pointer.y
                     });
                     break;
                 case 'line':
@@ -839,22 +921,17 @@ export const Canvas = () => {
                     });
                     break;
                 case 'text':
-                    shape = createShapeByType(ShapeType.Text, { 
-                        left: pointer.x, 
-                        top: pointer.y 
+                    shape = createShapeByType(ShapeType.Text, {
+                        left: pointer.x,
+                        top: pointer.y
                     });
                     break;
                 case 'frame':
-                    shape = createShapeByType(ShapeType.Rectangle, {
+                    shape = createShapeByType(ShapeType.Frame, {
                         left: pointer.x,
                         top: pointer.y,
                         width: 400,
                         height: 300,
-                        fill: '#ffffff',
-                        stroke: '#e5e7eb',
-                        strokeWidth: 1,
-                        selectable: true,
-                        hasControls: true,
                     });
                     if (shape) {
                         (shape as any).isFrame = true;
@@ -1197,26 +1274,47 @@ export const Canvas = () => {
                 saveToHistory();
             }
 
-            // Ctrl/Cmd + Shift + L (Unlock All)
-            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'l') {
-                e.preventDefault();
-                canvas.getObjects().forEach(obj => {
-                    if ((obj as any).locked) {
-                        (obj as any).locked = false;
-                        obj.set({
-                            selectable: true,
-                            hasControls: true,
-                            lockMovementX: false,
-                            lockMovementY: false,
-                            lockRotation: false,
-                            lockScalingX: false,
-                            lockScalingY: false
-                        });
-                    }
-                });
-                canvas.requestRenderAll();
-                saveToHistory();
+            // Ctrl/Cmd + C (Copy)
+            if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+                const active = canvas.getActiveObject();
+                if (active && (e.target as HTMLElement).tagName !== 'INPUT') {
+                    active.clone().then((cloned) => {
+                        (window as any)._canvasClipboard = cloned;
+                    });
+                }
             }
+
+            // Ctrl/Cmd + V (Paste)
+            if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+                const cloned = (window as any)._canvasClipboard;
+                if (cloned && (e.target as HTMLElement).tagName !== 'INPUT') {
+                    cloned.clone().then((pastedObj: any) => {
+                        canvas.discardActiveObject();
+                        pastedObj.set({
+                            left: pastedObj.left + 20,
+                            top: pastedObj.top + 20,
+                            evented: true,
+                        });
+                        if (pastedObj.type === 'activeSelection') {
+                            pastedObj.canvas = canvas;
+                            pastedObj.forEachObject((obj: any) => {
+                                canvas.add(obj);
+                            });
+                            pastedObj.setCoords();
+                        } else {
+                            canvas.add(pastedObj);
+                        }
+                        pastedObj.top += 20;
+                        pastedObj.left += 20;
+                        (window as any)._canvasClipboard = pastedObj;
+                        canvas.setActiveObject(pastedObj);
+                        canvas.requestRenderAll();
+                        saveToHistory();
+                    });
+                }
+            }
+
+            // Ctrl/Cmd + Shift + L (Unlock All)
         };
 
         window.addEventListener('keydown', handleKeyDown);
@@ -1230,7 +1328,7 @@ export const Canvas = () => {
         const previousState = canvasHistory[historyIndex - 1];
         loadCanvasFromJSON(fabricCanvasRef.current, previousState);
         setHistoryIndex((prev) => prev - 1);
-        
+
         // Update objects state for sidebar
         setTimeout(() => {
             setCanvasObjects(fabricCanvasRef.current?.getObjects() || []);
@@ -1244,7 +1342,7 @@ export const Canvas = () => {
         const nextState = canvasHistory[historyIndex + 1];
         loadCanvasFromJSON(fabricCanvasRef.current, nextState);
         setHistoryIndex((prev) => prev + 1);
-        
+
         // Update objects state for sidebar
         setTimeout(() => {
             setCanvasObjects(fabricCanvasRef.current?.getObjects() || []);
@@ -1306,7 +1404,7 @@ export const Canvas = () => {
     // Export canvas as PDF
     const handleExportPDF = useCallback(() => {
         if (!fabricCanvasRef.current) return;
-        
+
         // Create a new jsPDF instance
         const { jsPDF } = require('jspdf');
         const pdf = new jsPDF({
@@ -1314,13 +1412,13 @@ export const Canvas = () => {
             unit: 'px',
             format: [fabricCanvasRef.current.width!, fabricCanvasRef.current.height!]
         });
-        
+
         // Get canvas as image
         const dataURL = fabricCanvasRef.current.toDataURL({
             format: 'png',
             multiplier: 2
         });
-        
+
         // Add image to PDF
         pdf.addImage(dataURL, 'PNG', 0, 0, fabricCanvasRef.current.width!, fabricCanvasRef.current.height!);
         pdf.save('design.pdf');
@@ -1331,7 +1429,8 @@ export const Canvas = () => {
         const canvas = fabricCanvasRef.current;
         if (!canvas) return;
 
-        let newZoom = canvas.getZoom() * 1.1; // Percent-based zoom is smoother
+        let currentZoom = canvas.getZoom();
+        let newZoom = Math.round((currentZoom + 0.1) * 10) / 10;
         if (newZoom > 5) newZoom = 5;
 
         canvas.zoomToPoint(new fabric.Point(canvas.width! / 2, canvas.height! / 2), newZoom);
@@ -1342,7 +1441,8 @@ export const Canvas = () => {
         const canvas = fabricCanvasRef.current;
         if (!canvas) return;
 
-        let newZoom = canvas.getZoom() / 1.1;
+        let currentZoom = canvas.getZoom();
+        let newZoom = Math.round((currentZoom - 0.1) * 10) / 10;
         if (newZoom < 0.1) newZoom = 0.1;
 
         canvas.zoomToPoint(new fabric.Point(canvas.width! / 2, canvas.height! / 2), newZoom);
@@ -1419,6 +1519,13 @@ export const Canvas = () => {
         setActivePageId(newPageId);
     };
 
+    const handleExportJPG = useCallback(() => {
+        if (!fabricCanvasRef.current) return;
+        exportCanvasAsJPG(fabricCanvasRef.current, 'design');
+    }, []);
+
+
+
     return (
         <div className="flex h-screen bg-gray-50 overflow-hidden relative">
             {/* Top Bar */}
@@ -1439,6 +1546,7 @@ export const Canvas = () => {
                 onClear={handleClear}
                 onDeleteProject={handleDeleteProject}
                 onExport={handleExport}
+                onExportJPG={handleExportJPG}
                 onExportSVG={handleExportSVG}
                 onExportPDF={handleExportPDF}
                 onZoomIn={handleZoomIn}
@@ -1464,18 +1572,10 @@ export const Canvas = () => {
                 />
             )}
 
-            {/* Toolbar - Pushed right due to sidebar */}
+            {/* Toolbar - Futuristic Contextual Dock */}
             <Toolbar
-                selectedTool={selectedTool}
-                onToolChange={(tool) => {
-                    if (tool === 'image') {
-                        handleImageUpload();
-                    } else {
-                        setSelectedTool(tool);
-                    }
-                }}
                 onReaction={handleReaction}
-                className={`transition-all duration-300 ${leftSidebarVisible ? "left-[256px]" : "left-6"}`}
+                handleImageUpload={handleImageUpload}
             />
 
             {/* Right Sidebar */}
@@ -1483,12 +1583,13 @@ export const Canvas = () => {
                 <RightSidebar
                     canvas={fabricCanvasRef.current}
                     selectedObjects={selectedObjects}
+                    selectedTool={selectedTool}
                 />
             )}
 
             {/* Canvas Container */}
             <div
-                className={`pt-16 relative flex-1 transition-all duration-300 ${leftSidebarVisible ? 'ml-[240px]' : 'ml-0'} ${rightSidebarVisible ? 'mr-[256px]' : 'mr-0'} overflow-hidden h-full`}
+                className={`pt-16 relative flex-1 transition-all duration-500 canvas-bg ${leftSidebarVisible ? 'ml-[256px]' : 'ml-0'} ${rightSidebarVisible ? 'mr-[272px]' : 'mr-0'} overflow-hidden h-full`}
                 onDragOver={(e) => {
                     e.preventDefault();
                     e.dataTransfer.dropEffect = 'copy';

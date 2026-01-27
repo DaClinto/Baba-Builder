@@ -6,163 +6,142 @@ import Link from 'next/link';
 
 export const LandingPage = () => {
     return (
-        <div className="min-h-screen bg-[#020617] text-white selection:bg-blue-500/30">
+        <div className="min-h-screen bg-[#020617] text-white selection:bg-blue-500/30 font-inter">
+            {/* Artistic Background blobs */}
+            <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
+                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/20 rounded-full blur-[160px] animate-pulse-soft" />
+                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-violet-600/20 rounded-full blur-[160px] animate-pulse-soft" style={{ animationDelay: '1s' }} />
+            </div>
+
             {/* Navigation */}
-            <nav className="fixed top-0 w-full z-50 px-8 py-6 flex items-center justify-between backdrop-blur-md bg-[#020617]/50 border-b border-white/5">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
-                        <Sparkles className="w-5 h-5 text-white" />
+            <nav className="fixed top-0 w-full z-50 px-8 py-6 flex items-center justify-between transition-all duration-300">
+                <div className="flex items-center gap-3 group cursor-pointer">
+                    <div className="w-10 h-10 rounded-xl overflow-hidden shadow-2xl border border-white/10 group-hover:scale-110 transition-transform duration-500">
+                        <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
                     </div>
-                    <span className="text-xl font-black tracking-tighter uppercase">Baba Builder</span>
+                    <span className="text-xl font-black tracking-tighter uppercase font-outfit">DrawToCreate</span>
                 </div>
-                <div className="hidden md:flex items-center gap-10 text-[11px] font-bold uppercase tracking-widest text-gray-400">
-                    <a href="#features" className="hover:text-white transition-colors">Features</a>
-                    <a href="#showcase" className="hover:text-white transition-colors">Showcase</a>
-                    <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
+
+                <div className="hidden md:flex items-center gap-10 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
+                    <a href="#features" className="hover:text-white hover:tracking-[0.25em] transition-all">Features</a>
+                    <a href="#showcase" className="hover:text-white hover:tracking-[0.25em] transition-all">Showcase</a>
+                    <a href="#pricing" className="hover:text-white hover:tracking-[0.25em] transition-all">Pricing</a>
                 </div>
+
                 <div className="flex items-center gap-4">
-                    <Link href="/login" className="text-sm font-bold text-gray-300 hover:text-white transition-colors">
+                    <Link href="/login" className="text-xs font-black uppercase tracking-widest text-gray-400 hover:text-white transition-colors">
                         Log In
                     </Link>
-                    <Link href="/login" className="bg-white text-black px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-blue-500 hover:text-white transition-all">
-                        Sign Up
+                    <Link href="/login" className="bg-white text-black px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all shadow-xl shadow-white/5 active:scale-95">
+                        Get Started
                     </Link>
                 </div>
             </nav>
 
             {/* Hero Section */}
-            <section className="relative pt-40 pb-24 px-8 overflow-hidden">
-                {/* Background Blobs */}
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full -z-10 pointer-events-none">
-                    <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[60%] bg-blue-600/10 rounded-full blur-[120px]" />
-                    <div className="absolute bottom-[10%] right-[-10%] w-[50%] h-[60%] bg-violet-600/10 rounded-full blur-[120px]" />
-                </div>
-
+            <section className="relative pt-48 pb-24 px-8 overflow-hidden">
                 <div className="max-w-7xl mx-auto text-center">
                     <motion.div
-                        initial={{ opacity: 0, y: 30 }}
+                        initial={{ opacity: 0, y: 40 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.8 }}
+                        transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
                     >
-                        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 mb-8">
-                            <Zap className="w-4 h-4 text-blue-500" />
-                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500">v2.0 is now live</span>
+                        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 mb-10 backdrop-blur-sm">
+                            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-300">Infinite Canvas v2.0 is live</span>
                         </div>
-                        <h1 className="text-7xl md:text-8xl xl:text-9xl font-black leading-[0.9] mb-8 bg-gradient-to-b from-white to-white/40 bg-clip-text text-transparent tracking-tighter">
-                            Create your next <br /> masterpiece.
+
+                        <h1 className="text-[clamp(3.5rem,10vw,8.5rem)] font-black leading-[0.85] mb-12 font-outfit tracking-tighter">
+                            Design at the <br />
+                            <span className="bg-gradient-to-r from-blue-400 via-violet-400 to-fuchsia-400 bg-clip-text text-transparent">speed of thought.</span>
                         </h1>
-                        <p className="text-xl md:text-2xl text-gray-400 mb-12 max-w-2xl mx-auto leading-relaxed font-medium">
-                            The collaborative design tool built for the next generation of creative minds. Real-time, boundless, and purely professional.
+
+                        <p className="text-lg md:text-xl text-gray-400 mb-14 max-w-2xl mx-auto leading-relaxed font-medium">
+                            The collaborative, AI-powered design environment for high-performance teams. Boundless creativity meets pixel-perfect execution.
                         </p>
 
-                        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-20">
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-6 mb-24">
                             <Link
                                 href="/login"
-                                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-10 py-5 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all shadow-xl shadow-blue-600/20 group text-lg"
+                                className="w-full sm:w-auto premium-gradient text-white px-10 py-5 rounded-2xl font-black uppercase tracking-widest text-sm flex items-center justify-center gap-3 transition-all hover:scale-105 shadow-2xl shadow-blue-600/30 active:scale-95 group"
                             >
-                                Start Designing Free
-                                <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+                                Create a Project
+                                <ArrowRight className="w-5 h-5 group-hover:translate-x-1.5 transition-transform" />
                             </Link>
-                            <button className="w-full sm:w-auto bg-white/5 hover:bg-white/10 border border-white/10 text-white px-10 py-5 rounded-2xl font-bold transition-all text-lg">
-                                View Examples
+                            <button className="w-full sm:w-auto bg-white/5 hover:bg-white/10 border border-white/10 text-white px-10 py-5 rounded-2xl font-black uppercase tracking-widest text-sm transition-all hover:border-white/20">
+                                View Gallery
                             </button>
                         </div>
                     </motion.div>
 
-                    {/* App Preview */}
+                    {/* App Showcase */}
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.9, y: 40 }}
+                        initial={{ opacity: 0, scale: 0.95, y: 60 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        transition={{ delay: 0.2, duration: 1 }}
-                        className="relative max-w-6xl mx-auto"
+                        transition={{ delay: 0.4, duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
+                        className="relative max-w-6xl mx-auto group"
                     >
-                        <div className="absolute inset-0 bg-blue-500/20 blur-[100px] pointer-events-none -z-10" />
-                        <div className="rounded-[2.5rem] border border-white/10 bg-[#020617] p-4 shadow-2xl glass overflow-hidden shadow-black/80">
+                        <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-violet-600 rounded-[2.5rem] blur opacity-25 group-hover:opacity-40 transition duration-1000 group-hover:duration-200" />
+                        <div className="relative rounded-[2.5rem] border border-white/10 bg-[#020617] p-4 shadow-2xl overflow-hidden">
                             <img
                                 src="/assets/hero.png"
-                                alt="Dashboard Preview"
-                                className="rounded-[1.8rem] w-full"
+                                alt="Figma Clone Interface"
+                                className="rounded-[1.8rem] w-full border border-white/5"
                             />
                         </div>
 
-                        {/* Floating Feature Cards */}
-                        <motion.div
-                            initial={{ x: -50, opacity: 0 }}
-                            animate={{ x: 0, opacity: 1 }}
-                            transition={{ delay: 0.8 }}
-                            className="absolute -left-12 top-1/4 hidden xl:block glass p-5 rounded-3xl border border-white/10 shadow-2xl max-w-[200px]"
-                        >
-                            <Layers className="w-8 h-8 text-blue-500 mb-3" />
-                            <h4 className="font-bold mb-1">Layer Stack</h4>
-                            <p className="text-[11px] text-gray-400">Professional depth management for complex designs.</p>
-                        </motion.div>
+                        {/* Floating Labels */}
+                        <div className="absolute -left-16 top-1/4 hidden 2xl:block glass-panel p-6 rounded-[2rem] max-w-[200px] border-white/10 animate-float">
+                            <Layers className="w-8 h-8 text-blue-500 mb-4" />
+                            <h4 className="font-black font-outfit text-sm mb-1 uppercase tracking-wider">Smart Layers</h4>
+                            <p className="text-[10px] text-gray-400 font-medium">Automatic grouping and professional stack management.</p>
+                        </div>
 
-                        <motion.div
-                            initial={{ x: 50, opacity: 0 }}
-                            animate={{ x: 0, opacity: 1 }}
-                            transition={{ delay: 1 }}
-                            className="absolute -right-12 bottom-1/4 hidden xl:block glass p-5 rounded-3xl border border-white/10 shadow-2xl max-w-[200px]"
-                        >
-                            <Users className="w-8 h-8 text-violet-500 mb-3" />
-                            <h4 className="font-bold mb-1">Collaboration</h4>
-                            <p className="text-[11px] text-gray-400">Work together in real-time with multi-cursor support.</p>
-                        </motion.div>
+                        <div className="absolute -right-16 bottom-1/4 hidden 2xl:block glass-panel p-6 rounded-[2rem] max-w-[200px] border-white/10 animate-float" style={{ animationDelay: '1.5s' }}>
+                            <Zap className="w-8 h-8 text-yellow-500 mb-4" />
+                            <h4 className="font-black font-outfit text-sm mb-1 uppercase tracking-wider">Fast Engine</h4>
+                            <p className="text-[10px] text-gray-400 font-medium">Render 10k+ objects at 60fps with pure WebGL power.</p>
+                        </div>
                     </motion.div>
                 </div>
             </section>
 
-            {/* Features Grid */}
-            <section id="features" className="py-32 px-8 bg-black/40">
+            {/* Features */}
+            <section id="features" className="py-32 px-8 bg-black/20">
                 <div className="max-w-7xl mx-auto">
-                    <div className="text-center mb-20">
-                        <h2 className="text-4xl md:text-5xl font-black mb-6">Built for speed.</h2>
-                        <p className="text-gray-400 max-w-xl mx-auto">Every pixel is optimized for performance and professional workflows.</p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
                         {[
-                            { icon: <Zap className="text-yellow-500" />, title: 'Lightning Fast', desc: 'Optimized canvas engine that handles thousands of objects without lag.' },
-                            { icon: <Layers className="text-blue-500" />, title: 'Smart Layers', desc: 'Powerful grouping and layering system for professional architectures.' },
-                            { icon: <ShieldCheck className="text-green-500" />, title: 'Secure Cloud', desc: 'Your masterpieces are encrypted and backed up to the cloud automatically.' },
+                            { icon: <Users className="text-blue-500" />, title: 'Real-time', desc: 'Work with your team live with sub-10ms cursor synchronization.' },
+                            { icon: <Sparkles className="text-violet-500" />, title: 'AI Assisted', desc: 'Automate repetitive tasks like background removal with one click.' },
+                            { icon: <Layers className="text-emerald-500" />, title: 'Components', desc: 'Build scalable design systems with reusable frames and styles.' },
                         ].map((f, i) => (
-                            <div key={i} className="bg-white/5 border border-white/5 p-10 rounded-[32px] hover:border-white/10 transition-all hover:bg-white/[0.07] group">
-                                <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mb-6 border border-white/10 group-hover:scale-110 transition-transform">
+                            <div key={i} className="group p-8 rounded-[2rem] hover:bg-white/5 transition-all duration-500 border border-transparent hover:border-white/5">
+                                <div className="w-14 h-14 bg-white/5 rounded-2xl flex items-center justify-center mb-8 border border-white/10 group-hover:scale-110 group-hover:border-white/20 transition-all">
                                     {f.icon}
                                 </div>
-                                <h3 className="text-xl font-bold mb-4">{f.title}</h3>
-                                <p className="text-gray-400 leading-relaxed text-sm">{f.desc}</p>
+                                <h3 className="text-2xl font-black font-outfit mb-4 tracking-tight">{f.title}</h3>
+                                <p className="text-gray-400 leading-relaxed font-medium text-sm">{f.desc}</p>
                             </div>
                         ))}
                     </div>
                 </div>
             </section>
 
-            {/* CTA Section */}
-            <section className="py-40 px-8 relative overflow-hidden">
-                <div className="absolute inset-0 bg-blue-600/10 pointer-events-none -z-10" />
-                <div className="max-w-4xl mx-auto text-center">
-                    <h2 className="text-6xl md:text-7xl font-black mb-10 tracking-tighter">Ready to build your <br /> legacy?</h2>
-                    <p className="text-xl text-gray-400 mb-12">Join over 10,000 creators who chose Baba Builder for their creative journey.</p>
-                    <Link
-                        href="/login"
-                        className="bg-white text-black px-12 py-6 rounded-2xl font-black text-xl hover:bg-blue-500 hover:text-white transition-all inline-flex items-center gap-3 shadow-2xl shadow-white/5 group"
-                    >
-                        Get Started Now
-                        <ArrowRight className="w-7 h-7 group-hover:translate-x-2 transition-transform" />
-                    </Link>
-                </div>
-            </section>
-
             {/* Footer */}
-            <footer className="py-20 px-8 border-t border-white/5 text-center">
-                <div className="flex items-center gap-3 justify-center mb-10">
-                    <div className="w-8 h-8 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
-                        <Sparkles className="w-4 h-4 text-white" />
+            <footer className="py-24 px-8 border-t border-white/5">
+                <div className="max-w-7xl mx-auto flex flex-col items-center">
+                    <div className="flex items-center gap-3 mb-12 group cursor-pointer">
+                        <div className="w-8 h-8 rounded-lg overflow-hidden border border-white/10 group-hover:rotate-12 transition-transform">
+                            <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
+                        </div>
+                        <span className="text-lg font-black tracking-tighter uppercase font-outfit">DrawToCreate</span>
                     </div>
-                    <span className="text-lg font-black tracking-tighter uppercase">Baba Builder</span>
+                    <p className="text-gray-600 text-[10px] font-black uppercase tracking-[0.5em] text-center">
+                        © 2026 Creativity Labs. Engineered in high-performance.
+                    </p>
                 </div>
-                <p className="text-gray-600 text-sm font-medium uppercase tracking-[0.3em]">© 2026 Creativity Labs. All rights reserved.</p>
             </footer>
         </div>
     );
 };
+

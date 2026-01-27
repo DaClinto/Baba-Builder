@@ -11,11 +11,15 @@ export default function AuthPage() {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        const formData = new FormData(e.currentTarget as HTMLFormElement);
+        const email = formData.get('email') as string;
+        const name = formData.get('name') as string || (isLogin ? 'Returning Visionary' : 'New Creator');
 
         // Mock user creation for the session
         const mockUser = {
-            id: Math.random().toString(36).substr(2, 9),
-            name: isLogin ? 'Returning Visionary' : 'New Creator',
+            id: email.replace(/[^a-zA-Z0-9]/g, '_'), // Use email as safe ID
+            email: email,
+            name: name,
             color: '#3b82f6'
         };
 
@@ -41,10 +45,10 @@ export default function AuthPage() {
                     className="relative z-10 max-w-2xl text-center lg:text-left"
                 >
                     <div className="flex items-center gap-3 mb-8 justify-center lg:justify-start">
-                        <div className="w-12 h-12 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-                            <Sparkles className="w-6 h-6 text-white" />
+                        <div className="w-12 h-12 rounded-2xl overflow-hidden shadow-lg shadow-blue-500/20 border border-white/10">
+                            <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
                         </div>
-                        <h2 className="text-2xl font-black tracking-tighter uppercase">Baba Builder</h2>
+                        <h2 className="text-2xl font-black tracking-tighter uppercase">DrawToCreate</h2>
                     </div>
 
                     <h1 className="text-6xl xl:text-7xl font-black leading-tight mb-6 bg-gradient-to-r from-white via-white to-gray-500 bg-clip-text text-transparent">
@@ -109,6 +113,7 @@ export default function AuthPage() {
                                         <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 transition-colors group-focus-within:text-blue-500" />
                                         <input
                                             type="text"
+                                            name="name"
                                             placeholder="Enter your name"
                                             className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all placeholder:text-gray-600"
                                             required
@@ -124,6 +129,7 @@ export default function AuthPage() {
                                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 transition-colors group-focus-within:text-blue-500" />
                                 <input
                                     type="email"
+                                    name="email"
                                     placeholder="name@example.com"
                                     className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all placeholder:text-gray-600"
                                     required

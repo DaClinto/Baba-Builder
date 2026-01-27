@@ -97,4 +97,7 @@ export type ToolType =
     | 'hand'
     | 'comment'
     | 'reaction'
-    | 'frame';
+    | 'frame'
+    | 'capture';
+
+export type ToolbarMode = 'create' | 'layout' | 'collaborate';

@@ -1,5 +1,5 @@
 import { atom } from 'jotai';
-import { User, Cursor, Reaction, Comment, ToolType, CanvasState } from '@/types';
+import { User, Cursor, Reaction, Comment, ToolType, CanvasState, ToolbarMode } from '@/types';
 
 // Current user
 export const currentUserAtom = atom<User | null>(null);
@@ -54,3 +54,6 @@ export const radiusTooltipAtom = atom<{ radius: number; x: number; y: number } |
 
 // Global loading state for heavy operations
 export const globalLoadingAtom = atom<{ loading: boolean; message: string } | null>(null);
+
+// Toolbar Mode
+export const currentToolbarModeAtom = atom<ToolbarMode>('create');

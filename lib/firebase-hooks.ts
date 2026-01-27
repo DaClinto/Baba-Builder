@@ -139,8 +139,8 @@ export const useReactions = (roomId: string) => {
 
             snapshot.forEach((doc) => {
                 const data = doc.data();
-                // Only show reactions from the last 3 seconds
-                if (now - data.timestamp < 3000) {
+                // Only show reactions from the last 6 seconds
+                if (now - data.timestamp < 6000) {
                     newReactions.push({
                         id: doc.id,
                         ...data,

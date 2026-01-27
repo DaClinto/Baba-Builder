@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import * as fabric from 'fabric';
 import { useAtom } from 'jotai';
-import { isGridEnabledAtom, gridSizeAtom, learningModeAtom, globalLoadingAtom } from '@/lib/store';
+import { isGridEnabledAtom, gridSizeAtom, learningModeAtom, globalLoadingAtom, selectedToolAtom } from '@/lib/store';
 import {
     AlignLeft,
     AlignCenter,
@@ -30,14 +30,22 @@ import {
     Loader2,
     RefreshCcw,
     Sparkles,
-    Undo2
+    Undo2,
+    LayoutTemplate,
+    Smartphone,
+    Tablet,
+    Monitor,
+    FileText
 } from 'lucide-react';
-import { alignObjects, distributeObjects } from '@/lib/canvas-utils';
+import { alignObjects, distributeObjects, createFrame, setGap } from '@/lib/canvas-utils';
+import { ToolType } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { removeBackground } from '@imgly/background-removal';
+import { TypographyControls } from './TypographyControls';
 type RightSidebarProps = {
     canvas: fabric.Canvas | null;
     selectedObjects: fabric.Object[];
+    selectedTool: ToolType;
 };
 
 const rgbaToHex = (color: string) => {
@@ -55,7 +63,7 @@ const rgbaToHex = (color: string) => {
     return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
 };
 
-export const RightSidebar = ({ canvas, selectedObjects }: RightSidebarProps) => {
+export const RightSidebar = ({ canvas, selectedObjects, selectedTool }: RightSidebarProps) => {
     const [color, setColor] = useState('#000000');
     const [strokeColor, setStrokeColor] = useState('#000000');
     const [strokeWidth, setStrokeWidth] = useState(1);
@@ -90,6 +98,7 @@ export const RightSidebar = ({ canvas, selectedObjects }: RightSidebarProps) => 
     const [gridSize, setGridSize] = useAtom(gridSizeAtom);
     const [learningMode, setLearningMode] = useAtom(learningModeAtom);
     const [globalLoading, setGlobalLoading] = useAtom(globalLoadingAtom);
+    const [, setSelectedTool] = useAtom(selectedToolAtom);
 
     const activeObject = selectedObjects[0];
     const isText = activeObject?.type === 'i-text' || activeObject?.type === 'text';
@@ -337,45 +346,248 @@ export const RightSidebar = ({ canvas, selectedObjects }: RightSidebarProps) => 
 
     const handleDuplicate = async () => {
         if (!canvas) return;
-        const active = canvas.getActiveObjects();
-        if (!active.length) return;
+        const activeObject = canvas.getActiveObject();
+        if (!activeObject) return;
 
-        active.forEach((obj) => {
-            obj.clone().then((clonedObj) => {
-                clonedObj.set({
-                    left: (obj.left || 0) + 20,
-                    top: (obj.top || 0) + 20,
-                    evented: true,
-                });
-
-                if ((clonedObj as any).id) {
-                    (clonedObj as any).id = uuidv4();
-                }
-
-                if (clonedObj.type === 'activeSelection') {
-                    // active selection needs special handling
-                    const selection = clonedObj as fabric.ActiveSelection;
-                    selection.canvas = canvas;
-                    selection.forEachObject((o: fabric.Object) => {
-                        if ((o as any).id) (o as any).id = uuidv4();
-                        canvas.add(o);
-                    });
-                    selection.setCoords();
-                } else {
-                    canvas.add(clonedObj);
-                }
-
-                canvas.setActiveObject(clonedObj);
-                canvas.requestRenderAll();
-                canvas.fire('object:modified'); // Trigger save
+        activeObject.clone().then((clonedObj: any) => {
+            canvas.discardActiveObject();
+            clonedObj.set({
+                left: clonedObj.left + 20,
+                top: clonedObj.top + 20,
+                evented: true,
             });
+
+            if (clonedObj.type === 'activeSelection') {
+                // Active selection needs to be added to canvas object by object
+                clonedObj.canvas = canvas;
+                clonedObj.forEachObject((obj: any) => {
+                    if (obj.id) obj.id = uuidv4();
+                    canvas.add(obj);
+                });
+                clonedObj.setCoords();
+            } else {
+                if (clonedObj.id) clonedObj.id = uuidv4();
+                canvas.add(clonedObj);
+            }
+
+            canvas.setActiveObject(clonedObj);
+            canvas.requestRenderAll();
+            canvas.fire('object:modified');
         });
     };
 
     if (!activeObject) {
+        if (selectedTool === 'frame') {
+            return (
+                <div className="fixed right-4 top-24 bottom-4 w-64 glass-panel rounded-3xl p-5 flex flex-col gap-6 shadow-2xl z-40 overflow-y-auto animate-in slide-in-from-right-4 duration-500">
+                    <div className="flex items-center gap-2 mb-2">
+                        <LayoutTemplate className="w-4 h-4 text-blue-500" />
+                        <h3 className="font-semibold text-gray-900">Frame Presets</h3>
+                    </div>
+
+                    <div className="space-y-6">
+                        {/* Phone */}
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-gray-500 text-xs font-medium uppercase tracking-wider">
+                                <Smartphone className="w-3 h-3" />
+                                Phone
+                            </div>
+                            <div className="grid grid-cols-1 gap-2">
+                                <button
+                                    onClick={() => {
+                                        if (!canvas) return;
+                                        const frame = createFrame({
+                                            width: 393,
+                                            height: 852,
+                                            left: canvas.getVpCenter().x - 393 / 2,
+                                            top: canvas.getVpCenter().y - 852 / 2
+                                        });
+                                        canvas.add(frame);
+                                        canvas.setActiveObject(frame);
+                                        setSelectedTool('select');
+                                        canvas.requestRenderAll();
+                                    }}
+                                    className="text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors text-sm text-gray-700 flex justify-between group"
+                                >
+                                    <span>iPhone 14/15 Pro</span>
+                                    <span className="text-gray-400 text-xs group-hover:text-gray-500">393x852</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (!canvas) return;
+                                        const frame = createFrame({
+                                            width: 430,
+                                            height: 932,
+                                            left: canvas.getVpCenter().x - 430 / 2,
+                                            top: canvas.getVpCenter().y - 932 / 2
+                                        });
+                                        canvas.add(frame);
+                                        canvas.setActiveObject(frame);
+                                        setSelectedTool('select');
+                                        canvas.requestRenderAll();
+                                    }}
+                                    className="text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors text-sm text-gray-700 flex justify-between group"
+                                >
+                                    <span>iPhone 14/15 Pro Max</span>
+                                    <span className="text-gray-400 text-xs group-hover:text-gray-500">430x932</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Tablet */}
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-gray-500 text-xs font-medium uppercase tracking-wider">
+                                <Tablet className="w-3 h-3" />
+                                Tablet
+                            </div>
+                            <div className="grid grid-cols-1 gap-2">
+                                <button
+                                    onClick={() => {
+                                        if (!canvas) return;
+                                        const frame = createFrame({
+                                            width: 834,
+                                            height: 1194,
+                                            left: canvas.getVpCenter().x - 834 / 2,
+                                            top: canvas.getVpCenter().y - 1194 / 2
+                                        });
+                                        canvas.add(frame);
+                                        canvas.setActiveObject(frame);
+                                        setSelectedTool('select');
+                                        canvas.requestRenderAll();
+                                    }}
+                                    className="text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors text-sm text-gray-700 flex justify-between group"
+                                >
+                                    <span>iPad Pro 11"</span>
+                                    <span className="text-gray-400 text-xs group-hover:text-gray-500">834x1194</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (!canvas) return;
+                                        const frame = createFrame({
+                                            width: 1024,
+                                            height: 1366,
+                                            left: canvas.getVpCenter().x - 1024 / 2,
+                                            top: canvas.getVpCenter().y - 1366 / 2
+                                        });
+                                        canvas.add(frame);
+                                        canvas.setActiveObject(frame);
+                                        setSelectedTool('select');
+                                        canvas.requestRenderAll();
+                                    }}
+                                    className="text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors text-sm text-gray-700 flex justify-between group"
+                                >
+                                    <span>iPad Pro 12.9"</span>
+                                    <span className="text-gray-400 text-xs group-hover:text-gray-500">1024x1366</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Desktop */}
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-gray-500 text-xs font-medium uppercase tracking-wider">
+                                <Monitor className="w-3 h-3" />
+                                Desktop
+                            </div>
+                            <div className="grid grid-cols-1 gap-2">
+                                <button
+                                    onClick={() => {
+                                        if (!canvas) return;
+                                        const frame = createFrame({
+                                            width: 1440,
+                                            height: 1024,
+                                            left: canvas.getVpCenter().x - 1440 / 2,
+                                            top: canvas.getVpCenter().y - 1024 / 2
+                                        });
+                                        canvas.add(frame);
+                                        canvas.setActiveObject(frame);
+                                        setSelectedTool('select');
+                                        canvas.requestRenderAll();
+                                    }}
+                                    className="text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors text-sm text-gray-700 flex justify-between group"
+                                >
+                                    <span>MacBook Pro 14"</span>
+                                    <span className="text-gray-400 text-xs group-hover:text-gray-500">1440x1024</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (!canvas) return;
+                                        const frame = createFrame({
+                                            width: 1920,
+                                            height: 1080,
+                                            left: canvas.getVpCenter().x - 1920 / 2,
+                                            top: canvas.getVpCenter().y - 1080 / 2
+                                        });
+                                        canvas.add(frame);
+                                        canvas.setActiveObject(frame);
+                                        setSelectedTool('select');
+                                        canvas.requestRenderAll();
+                                    }}
+                                    className="text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors text-sm text-gray-700 flex justify-between group"
+                                >
+                                    <span>Desktop (1080p)</span>
+                                    <span className="text-gray-400 text-xs group-hover:text-gray-500">1920x1080</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Paper */}
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-gray-500 text-xs font-medium uppercase tracking-wider">
+                                <FileText className="w-3 h-3" />
+                                Paper
+                            </div>
+                            <div className="grid grid-cols-1 gap-2">
+                                <button
+                                    onClick={() => {
+                                        if (!canvas) return;
+                                        const frame = createFrame({
+                                            width: 595,
+                                            height: 842,
+                                            left: canvas.getVpCenter().x - 595 / 2,
+                                            top: canvas.getVpCenter().y - 842 / 2
+                                        });
+                                        canvas.add(frame);
+                                        canvas.setActiveObject(frame);
+                                        setSelectedTool('select');
+                                        canvas.requestRenderAll();
+                                    }}
+                                    className="text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors text-sm text-gray-700 flex justify-between group"
+                                >
+                                    <span>A4</span>
+                                    <span className="text-gray-400 text-xs group-hover:text-gray-500">595x842</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (!canvas) return;
+                                        const frame = createFrame({
+                                            width: 612,
+                                            height: 792,
+                                            left: canvas.getVpCenter().x - 612 / 2,
+                                            top: canvas.getVpCenter().y - 792 / 2
+                                        });
+                                        canvas.add(frame);
+                                        canvas.setActiveObject(frame);
+                                        setSelectedTool('select');
+                                        canvas.requestRenderAll();
+                                    }}
+                                    className="text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors text-sm text-gray-700 flex justify-between group"
+                                >
+                                    <span>Letter</span>
+                                    <span className="text-gray-400 text-xs group-hover:text-gray-500">612x792</span>
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            );
+        }
         return (
-            <div className="fixed right-0 top-16 bottom-0 w-64 bg-white border-l border-gray-200 p-4 flex flex-col gap-6 shadow-lg z-40 overflow-y-auto">
-                <h3 className="font-semibold text-gray-900">Canvas Settings</h3>
+            <div className="fixed right-4 top-24 bottom-4 w-64 glass-panel rounded-3xl p-5 flex flex-col gap-6 shadow-2xl z-40 overflow-y-auto animate-in slide-in-from-right-4 duration-500">
+                <div className="flex items-center gap-2 mb-2">
+                    <Grid className="w-4 h-4 text-blue-500" />
+                    <h3 className="font-black text-[10px] text-gray-900 uppercase tracking-[0.15em]">Canvas Settings</h3>
+                </div>
 
                 <div className="space-y-4">
                     <div className="flex items-center justify-between">
@@ -438,7 +650,7 @@ export const RightSidebar = ({ canvas, selectedObjects }: RightSidebarProps) => 
     }
 
     return (
-        <div className="fixed right-0 top-16 bottom-0 w-64 bg-white border-l border-gray-200 p-4 flex flex-col gap-6 shadow-lg z-40 overflow-y-auto">
+        <div className="fixed right-4 top-24 bottom-4 w-64 glass-panel rounded-3xl p-5 flex flex-col gap-6 shadow-2xl z-40 overflow-y-auto animate-in slide-in-from-right-4 duration-500">
             {/* Alignment Tools (Visible when multiple or single) */}
             <div className="space-y-3 pb-4 border-b border-gray-100">
                 <label className="text-sm font-medium text-gray-700">Alignment</label>
@@ -471,6 +683,43 @@ export const RightSidebar = ({ canvas, selectedObjects }: RightSidebarProps) => 
                         <GalleryVertical className="w-3 h-3" /> Distribute V
                     </button>
                 </div>
+                {selectedObjects.length >= 2 && (
+                    <div className="space-y-3 pt-4 border-t border-gray-100">
+                        <div className="flex items-center justify-between">
+                            <label className="text-[10px] uppercase text-gray-400 font-black tracking-widest">Spacing / Gap (Enter to apply)</label>
+                        </div>
+                        <div className="flex gap-3">
+                            <div className="flex-1 space-y-1">
+                                <span className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter">Horizontal</span>
+                                <input
+                                    type="number"
+                                    placeholder="0"
+                                    className="w-full bg-gray-50 border-none rounded p-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            const val = parseInt((e.target as HTMLInputElement).value);
+                                            if (!isNaN(val) && canvas) setGap(canvas, 'horizontal', val);
+                                        }
+                                    }}
+                                />
+                            </div>
+                            <div className="flex-1 space-y-1">
+                                <span className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter">Vertical</span>
+                                <input
+                                    type="number"
+                                    placeholder="0"
+                                    className="w-full bg-gray-50 border-none rounded p-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            const val = parseInt((e.target as HTMLInputElement).value);
+                                            if (!isNaN(val) && canvas) setGap(canvas, 'vertical', val);
+                                        }
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="flex items-center justify-between">
@@ -546,7 +795,7 @@ export const RightSidebar = ({ canvas, selectedObjects }: RightSidebarProps) => 
                     </div>
                 </div>
 
-                {activeObject.type === 'rect' && (
+                {(activeObject.type === 'rect' || activeObject.type === 'image') && (
                     <div className="space-y-1">
                         <label className="text-[10px] uppercase text-gray-400 font-bold tracking-tight">Corner Radius</label>
                         <input
@@ -560,7 +809,24 @@ export const RightSidebar = ({ canvas, selectedObjects }: RightSidebarProps) => 
                                 val = Math.max(0, Math.min(val, maxRadius));
 
                                 setDimensions(prev => ({ ...prev, cornerRadius: val }));
-                                handleUpdate({ rx: val, ry: val });
+
+                                if (activeObject.type === 'image') {
+                                    if (val === 0) {
+                                        handleUpdate({ rx: 0, ry: 0, clipPath: null });
+                                    } else {
+                                        const clipPath = new fabric.Rect({
+                                            width: activeObject.width,
+                                            height: activeObject.height,
+                                            rx: val,
+                                            ry: val,
+                                            originX: 'center',
+                                            originY: 'center',
+                                        });
+                                        handleUpdate({ rx: val, ry: val, clipPath });
+                                    }
+                                } else {
+                                    handleUpdate({ rx: val, ry: val });
+                                }
                             }}
                             className="w-full bg-gray-50 border-none rounded p-1.5 text-sm focus:ring-1 focus:ring-blue-500 outline-none"
                         />
@@ -610,11 +876,14 @@ export const RightSidebar = ({ canvas, selectedObjects }: RightSidebarProps) => 
                         min="0"
                         value={strokeWidth}
                         onChange={(e) => {
-                            const val = parseInt(e.target.value);
+                            const val = parseInt(e.target.value) || 0;
                             setStrokeWidth(val);
-                            handleUpdate({ strokeWidth: val });
+                            handleUpdate({
+                                strokeWidth: val,
+                                stroke: val > 0 ? strokeColor : 'transparent'
+                            });
                         }}
-                        className="w-16 p-1 text-sm border-b border-gray-300 outline-none"
+                        className="w-16 p-1 bg-gray-50 rounded text-xs outline-none text-center"
                     />
                 </div>
 
@@ -880,25 +1149,13 @@ export const RightSidebar = ({ canvas, selectedObjects }: RightSidebarProps) => 
                         >
                             <Italic className="w-4 h-4" />
                         </button>
-                        <button
-                            onClick={() => handleUpdate({ textAlign: 'left' })}
-                            className={`p-1 hover:bg-gray-100 rounded ${activeObject.get('textAlign') === 'left' ? 'bg-blue-100 text-blue-600' : ''}`}
-                        >
-                            <AlignLeft className="w-4 h-4" />
-                        </button>
-                        <button
-                            onClick={() => handleUpdate({ textAlign: 'center' })}
-                            className={`p-1 hover:bg-gray-100 rounded ${activeObject.get('textAlign') === 'center' ? 'bg-blue-100 text-blue-600' : ''}`}
-                        >
-                            <AlignCenter className="w-4 h-4" />
-                        </button>
-                        <button
-                            onClick={() => handleUpdate({ textAlign: 'right' })}
-                            className={`p-1 hover:bg-gray-100 rounded ${activeObject.get('textAlign') === 'right' ? 'bg-blue-100 text-blue-600' : ''}`}
-                        >
-                            <AlignRight className="w-4 h-4" />
-                        </button>
                     </div>
+
+                    <TypographyControls
+                        canvas={canvas}
+                        activeObject={activeObject}
+                        handleUpdate={handleUpdate}
+                    />
                 </div>
             )}
 

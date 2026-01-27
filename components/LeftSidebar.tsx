@@ -32,7 +32,7 @@ export const LeftSidebar = ({
 }: LeftSidebarProps) => {
 
     return (
-        <div className="fixed left-0 top-16 bottom-0 w-64 bg-white border-r border-gray-200 flex flex-col shadow-2xl z-40 overflow-hidden">
+        <div className="fixed left-4 top-24 bottom-4 w-60 glass-panel rounded-3xl flex flex-col shadow-2xl z-40 overflow-hidden animate-in slide-in-from-left-4 duration-500">
 
             {/* Pages Panel */}
             <div className="border-b border-gray-200 flex-none bg-gray-50/30">
