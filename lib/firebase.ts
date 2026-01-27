@@ -1,5 +1,5 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
@@ -16,7 +16,11 @@ const firebaseConfig = {
 // Initialize Firebase only if it hasn't been initialized
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
-export const db = getFirestore(app);
+// Use initializeFirestore with settings to overcome transport errors
+export const db = initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+});
+
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 export { app };
