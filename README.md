@@ -1,4 +1,4 @@
-# Similar aspp to Figma
+# Similar app to Figma
 
 A real-time collaborative design tool built with Next.js 14, Fabric.js, and Firebase.
 
