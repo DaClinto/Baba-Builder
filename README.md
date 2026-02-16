@@ -1,4 +1,4 @@
-# Figma Clone
+# Similar aspp to Figma
 
 A real-time collaborative design tool built with Next.js 14, Fabric.js, and Firebase.
 
